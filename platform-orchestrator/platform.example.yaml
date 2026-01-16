@@ -1,0 +1,264 @@
+# ============================================
+# Platform Configuration
+# ============================================
+# Complete self-hosted Kubernetes platform
+# ============================================
+
+# ---------------------------------------------
+# Global Settings
+# ---------------------------------------------
+global:
+  domain: example.com
+  email: admin@example.com
+  timezone: UTC
+  environment: production
+
+# ---------------------------------------------
+# Network Architecture
+# ---------------------------------------------
+network:
+  # Hetzner Private Network
+  private_network:
+    cidr: 10.0.0.0/16
+    
+    # Segments
+    infrastructure: 10.0.0.0/24    # Bastion: 10.0.0.2
+    control_plane: 10.0.1.0/24     # Masters: 10.0.1.1-3
+    workers: 10.0.2.0/24           # Workers: 10.0.2.1-3
+    services: 10.0.10.0/24         # MetalLB pool
+  
+  # Bastion (VPN + SSH Jump)
+  bastion:
+    enabled: true
+    server_type: cx22  # €4/mo
+    private_ip: 10.0.0.2
+  
+  # Load Balancer (Public Apps)
+  load_balancer:
+    enabled: true
+    type: lb11  # €6/mo
+  
+  # VPN Configuration
+  vpn:
+    enabled: true
+    provider: headscale
+    domain: vpn.example.com
+  
+  # TLS Configuration
+  tls:
+    enabled: true
+    issuer: letsencrypt
+    dns_provider: cloudflare  # cloudflare | hetzner | route53
+    wildcard: true
+
+# ---------------------------------------------
+# Service Exposure
+# ---------------------------------------------
+services:
+  # PUBLIC (via Load Balancer) - User/External access
+  public:
+    - domain: app.example.com
+      service: frontend
+      namespace: production
+      port: 80
+    
+    - domain: api.example.com
+      service: backend
+      namespace: production
+      port: 8080
+    
+    - domain: s3.example.com
+      service: minio
+      namespace: minio
+      port: 9000
+      description: "MinIO S3 API - for external uploads"
+    
+    - domain: registry.example.com
+      service: gitlab-registry
+      namespace: gitlab
+      port: 5000
+      description: "Container Registry - for docker pulls"
+  
+  # PRIVATE (via VPN only) - Admin/DevOps access
+  private:
+    - domain: gitlab.example.com
+      service: gitlab-webservice-default
+      namespace: gitlab
+      port: 8181
+    
+    - domain: argocd.example.com
+      service: argocd-server
+      namespace: argocd
+      port: 443
+    
+    - domain: grafana.example.com
+      service: grafana
+      namespace: monitoring
+      port: 80
+    
+    - domain: minio.example.com
+      service: minio-console
+      namespace: minio
+      port: 9001
+      description: "MinIO Console - admin UI"
+    
+    - domain: vault.example.com
+      service: vault
+      namespace: vault
+      port: 8200
+    
+    - domain: k8s.example.com
+      service: kubernetes-api
+      ip: 10.0.1.1
+      port: 6443
+      description: "Kubernetes API - for kubectl"
+
+# ---------------------------------------------
+# Infrastructure (Hetzner)
+# ---------------------------------------------
+infrastructure:
+  provider: hetzner
+  region: fsn1
+  
+  ssh_key_path: ~/.ssh/id_ed25519
+  ssh_user: root
+  
+  # All nodes: NO PUBLIC IP (--without-ipv4)
+  control_plane:
+    count: 3
+    type: cpx31
+    public_ip: false  # Private network only!
+    
+  workers:
+    count: 3
+    type: cpx41
+    public_ip: false  # Private network only!
+
+# ---------------------------------------------
+# Kubernetes Cluster
+# ---------------------------------------------
+kubernetes:
+  version: v1.34.3
+  
+  cni: cilium
+  cilium_version: v1.18.5
+  
+  pod_cidr: 10.233.64.0/18
+  service_cidr: 10.233.0.0/18
+  
+  features:
+    gateway_api: true
+    gateway_api_version: v1.4.0
+    hubble: true
+    encryption: true
+    network_policies: true
+
+# ---------------------------------------------
+# Storage (MinIO)
+# ---------------------------------------------
+storage:
+  enabled: true
+  replicas: 4
+  storage_class: hcloud-volumes
+  size_per_replica: 100Gi
+
+# ---------------------------------------------
+# Secrets Management (Vault)
+# ---------------------------------------------
+secrets:
+  enabled: true
+  vault:
+    replicas: 3
+    storage_size: 10Gi
+  eso:
+    enabled: true
+
+# ---------------------------------------------
+# Databases
+# ---------------------------------------------
+databases:
+  postgresql:
+    enabled: true
+    version: 17
+    replicas: 3
+    storage_size: 20Gi
+    
+  mongodb:
+    enabled: false
+    version: "8.0"
+    replicas: 3
+    storage_size: 20Gi
+
+# ---------------------------------------------
+# GitLab
+# ---------------------------------------------
+gitlab:
+  enabled: true
+  
+  # Private access (via VPN)
+  domain: gitlab.example.com
+  
+  # Public access (for docker pulls)
+  registry_domain: registry.example.com
+  registry_public: true
+  
+  webservice_replicas: 2
+  sidekiq_replicas: 2
+  
+  runner:
+    enabled: true
+    concurrent_jobs: 20
+
+# ---------------------------------------------
+# GitOps (ArgoCD)
+# ---------------------------------------------
+gitops:
+  enabled: true
+  domain: argocd.example.com  # Private
+  ha_enabled: true
+
+# ---------------------------------------------
+# Observability
+# ---------------------------------------------
+observability:
+  metrics:
+    enabled: true
+    retention: 30d
+    storage_size: 50Gi
+    
+  logging:
+    enabled: true
+    retention: 14d
+    
+  grafana:
+    enabled: true
+    domain: grafana.example.com  # Private
+
+# ---------------------------------------------
+# Autoscaling (KEDA)
+# ---------------------------------------------
+autoscaling:
+  enabled: true
+
+# ---------------------------------------------
+# Application Workloads Example
+# ---------------------------------------------
+applications:
+  # Define your apps here - deployed via ArgoCD
+  - name: frontend
+    namespace: production
+    domain: app.example.com  # Public
+    replicas: 2
+    
+  - name: backend
+    namespace: production
+    domain: api.example.com  # Public
+    replicas: 2
+
+# ---------------------------------------------
+# Backup
+# ---------------------------------------------
+backup:
+  enabled: true
+  schedule: "0 2 * * *"
+  retention_days: 30

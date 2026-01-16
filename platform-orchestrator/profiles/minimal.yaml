@@ -1,0 +1,122 @@
+# ============================================
+# MINIMAL TIER - ~€18-20/mo
+# ============================================
+# Best for: Development, testing, learning
+# Nodes: 2 (combined master+worker)
+# HA: No
+# ============================================
+
+tier: minimal
+cost_estimate: "€18-20/mo"
+
+global:
+  project: k8s          # Resource prefix: k8s-network, k8s-bastion, etc.
+  domain: example.com
+  email: admin@example.com
+  environment: development
+
+# ---------------------------------------------
+# Infrastructure
+# ---------------------------------------------
+infrastructure:
+  provider: hetzner
+  region: hel1
+  
+  control_plane:
+    count: 1
+    type: cx32
+    schedulable: true  # Also runs workloads
+  
+  workers:
+    count: 1
+    type: cx22
+
+# ---------------------------------------------
+# Network
+# ---------------------------------------------
+network:
+  bastion:
+    enabled: true
+    server_type: cx22
+    proxy_public_apps: true  # No LB, bastion handles traffic
+  
+  load_balancer:
+    enabled: false  # Save €6/mo
+  
+  vpn:
+    enabled: true
+
+# ---------------------------------------------
+# Kubernetes
+# ---------------------------------------------
+kubernetes:
+  version: v1.34.3
+  cni: cilium
+  ha_control_plane: false
+
+# ---------------------------------------------
+# Storage - ENABLED by default
+# ---------------------------------------------
+storage:
+  enabled: true
+  mode: standalone
+  replicas: 1
+  size: 50Gi
+
+# ---------------------------------------------
+# Secrets - ENABLED by default
+# ---------------------------------------------
+secrets:
+  enabled: true
+  vault:
+    replicas: 1
+    storage_size: 5Gi
+
+# ---------------------------------------------
+# Databases - ENABLED by default
+# ---------------------------------------------
+databases:
+  postgresql:
+    enabled: true
+    replicas: 1
+    storage_size: 10Gi
+
+# ---------------------------------------------
+# GitLab - ENABLED by default
+# ---------------------------------------------
+gitlab:
+  enabled: true
+  webservice_replicas: 1
+  sidekiq_replicas: 1
+  runner:
+    enabled: true
+    concurrent_jobs: 2
+
+# ---------------------------------------------
+# GitOps - ENABLED by default
+# ---------------------------------------------
+gitops:
+  enabled: true
+  ha_enabled: false
+
+# ---------------------------------------------
+# Observability - ENABLED by default
+# ---------------------------------------------
+observability:
+  metrics:
+    enabled: true
+    retention: 7d
+    storage_size: 10Gi
+  
+  logging:
+    enabled: true
+    retention: 3d
+  
+  grafana:
+    enabled: true
+
+# ---------------------------------------------
+# Autoscaling - ENABLED by default
+# ---------------------------------------------
+autoscaling:
+  enabled: true
