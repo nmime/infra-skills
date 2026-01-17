@@ -45,25 +45,13 @@ Kubernetes via **Kubespray** + core addons. (Updated: January 2026). All scripts
 
 *schedulable
 
-## Scripts
+## Installation
 
-Run from bastion server:
-
-```bash
-# Install Kubernetes cluster
-./scripts/install-cluster.sh --project k8s --tier small
-
-# Install LoadBalancer (choose provider)
-./scripts/install-loadbalancer.sh --provider hetzner    # Hetzner CCM
-./scripts/install-loadbalancer.sh --provider aws        # AWS Cloud Provider
-./scripts/install-loadbalancer.sh --provider gcp        # GCP Cloud Provider
-./scripts/install-loadbalancer.sh --provider azure      # Azure Cloud Provider
-./scripts/install-loadbalancer.sh --provider baremetal --ip-range 192.168.1.240-192.168.1.250  # MetalLB
-
-# Install cert-manager + TLS
-./scripts/install-cert-manager.sh
-./scripts/setup-tls.sh <domain> <email>
-```
+Run from bastion server. See reference files for detailed commands:
+- Kubernetes cluster: [references/kubespray.md](references/kubespray.md)
+- CNI: [references/cilium.md](references/cilium.md)
+- Ingress: [references/gateway-api.md](references/gateway-api.md)
+- TLS: [references/cert-manager.md](references/cert-manager.md)
 
 ## kubectl Access
 

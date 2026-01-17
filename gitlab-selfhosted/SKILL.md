@@ -1,6 +1,6 @@
 ---
 name: gitlab-selfhosted
-description: GitLab CE. Light or full mode based on tier.
+description: GitLab CE self-hosted deployment on Kubernetes. Use when installing, configuring, upgrading, or managing GitLab instances including runners, container registry, backups, and external database integration.
 ---
 
 # GitLab Self-Hosted
@@ -27,11 +27,9 @@ GitLab CE v18.7.1 with tier-based resources. (Updated: January 2026)
 | minimal/small | light | 2-4GB |
 | medium/production | full | 6-12GB |
 
-## Scripts
+## Installation
 
-```bash
-./scripts/install-gitlab.sh <domain> <tier>
-```
+See [references/gitlab-helm.md](references/gitlab-helm.md) for Helm-based installation.
 
 ## Reference Files
 

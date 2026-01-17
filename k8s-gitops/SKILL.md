@@ -1,6 +1,6 @@
 ---
 name: k8s-gitops
-description: ArgoCD for GitOps deployments.
+description: ArgoCD GitOps continuous delivery for Kubernetes. Use when installing ArgoCD, configuring ApplicationSets, setting up GitLab CI integration, or managing GitOps repository structure.
 ---
 
 # K8s GitOps
@@ -27,11 +27,9 @@ kubectl create namespace argocd
 kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.2.5/manifests/ha/install.yaml
 ```
 
-## Scripts
+## Installation
 
-```bash
-./scripts/install-argocd.sh <tier>
-```
+See [references/argocd.md](references/argocd.md) for tier-based installation.
 
 ## Reference Files
 

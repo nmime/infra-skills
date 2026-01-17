@@ -16,14 +16,11 @@ HashiCorp Vault v1.21.2 + ESO v1.2.1. (Updated: January 2026). All scripts are *
 | Vault | v1.21.2 |
 | ESO | v1.2.1 |
 
-> **Note**: ESO has not reached stable 1.0 yet. Each minor version bump may include breaking changes. Plan for testing during upgrades.
+> **Note**: ESO minor version bumps may include breaking changes. Plan for testing during upgrades.
 
-## Scripts
+## Installation
 
-```bash
-./scripts/install-vault.sh <tier>
-./scripts/install-eso.sh
-```
+See [references/vault.md](references/vault.md) for Vault setup and [references/eso.md](references/eso.md) for External Secrets Operator.
 
 ## Reference Files
 

@@ -1,6 +1,6 @@
 ---
 name: k8s-databases
-description: PostgreSQL via Percona Operator. Single or HA based on tier.
+description: PostgreSQL and MongoDB on Kubernetes via Percona Operators. Use when deploying databases, configuring HA clusters, setting up backups, monitoring, or performing database operations.
 ---
 
 # K8s Databases
@@ -33,11 +33,9 @@ Percona PostgreSQL Operator v2.8.2. (Updated: January 2026). All scripts are **i
 - Asynchronous I/O for better performance
 - Huge pages support (if enabled in K8s)
 
-## Scripts
+## Installation
 
-```bash
-./scripts/install-postgresql.sh <tier>
-```
+See [references/postgresql.md](references/postgresql.md) for HA setup or [references/postgresql-single.md](references/postgresql-single.md) for single instance.
 
 ## Reference Files
 

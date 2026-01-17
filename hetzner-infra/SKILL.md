@@ -1,6 +1,6 @@
 ---
-name: cloud-infra
-description: Cloud infrastructure provisioning for Kubernetes. Concepts and architecture with hcloud CLI implementation.
+name: hetzner-infra
+description: Hetzner cloud infrastructure provisioning for Kubernetes. Use when provisioning servers, networks, load balancers, firewalls, DNS zones, or storage on Hetzner Cloud via hcloud CLI.
 ---
 
 # Cloud Infrastructure
@@ -122,11 +122,9 @@ hcloud server list
 | Datacenters | [hcloud-datacenter.md](references/hcloud-datacenter.md) |
 | Context | [hcloud-context.md](references/hcloud-context.md) |
 
-## One-Command Setup
+## Provisioning
 
-```bash
-./setup-infrastructure.sh --project myapp --domain example.com --tier small
-```
+See [references/provisioning.md](references/provisioning.md) for step-by-step infrastructure setup.
 
 ## References
 

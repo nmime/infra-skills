@@ -98,20 +98,13 @@ Always included: `@`, `*`, `api`, `app`
 
 > **Note**: For non-Hetzner providers, provision infrastructure manually or with your cloud's tools (Terraform, CloudFormation, etc.), then run k8s-cluster-management.
 
-## Commands
+## Operations
 
-Run from bastion server:
-
-```bash
-./platform.sh init              # Create config
-./platform.sh deploy all        # Full deployment
-./platform.sh deploy <comp>     # Deploy component
-./platform.sh status            # Show status
-./platform.sh credentials       # Show passwords
-./platform.sh health            # Health check
-./platform.sh heal              # Auto-fix issues
-./platform.sh destroy           # Remove all
-```
+Run from bastion server. See reference files for detailed procedures:
+- Configuration: [references/configuration.md](references/configuration.md)
+- Deployment: [references/deployment.md](references/deployment.md)
+- Day-to-day: [references/operations.md](references/operations.md)
+- Self-healing: [references/self-healing.md](references/self-healing.md)
 
 ## Deployment Order
 

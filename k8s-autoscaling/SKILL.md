@@ -1,6 +1,6 @@
 ---
 name: k8s-autoscaling
-description: KEDA for event-driven autoscaling.
+description: KEDA event-driven autoscaling for Kubernetes. Use when installing KEDA, configuring scalers (Prometheus, RabbitMQ, Kafka, etc.), setting up HPA, or implementing autoscaling best practices.
 ---
 
 # K8s Autoscaling
@@ -17,11 +17,9 @@ KEDA v2.18.x (70+ built-in scalers). (Updated: January 2026). All scripts are **
 | GCP Pub/Sub `subscriptionSize` | DEPRECATED - use `mode` and `value` instead (removed in v2.20) |
 | Huawei `minMetricValue` | DEPRECATED - use `activationTargetMetricValue` (removed in v2.20) |
 
-## Scripts
+## Installation
 
-```bash
-./scripts/install-keda.sh
-```
+See [references/keda.md](references/keda.md) for KEDA installation via Helm.
 
 ## Reference Files
 

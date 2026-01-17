@@ -30,15 +30,12 @@ INTERNET
                 └──▶ Bastion + Headscale
 ```
 
-## Scripts
+## Setup
 
-Run on bastion server:
-
-```bash
-./scripts/setup-headscale.sh      # VPN server
-./scripts/add-vpn-user.sh <name>  # Add user
-./scripts/setup-firewall.sh       # Firewall rules
-```
+Run on bastion server. See reference files for detailed commands:
+- VPN server: [references/headscale.md](references/headscale.md)
+- User management: [references/users.md](references/users.md)
+- Firewall rules: [references/firewall.md](references/firewall.md)
 
 ## VPN Client Access
 

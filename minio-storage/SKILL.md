@@ -1,6 +1,6 @@
 ---
 name: minio-storage
-description: S3-compatible storage. Standalone or distributed based on tier.
+description: MinIO S3-compatible object storage on Kubernetes. Use when deploying MinIO, configuring buckets, setting up integrations with GitLab/Loki/backups, or managing S3-compatible storage infrastructure.
 ---
 
 # MinIO Storage
@@ -26,13 +26,11 @@ As of October 2025, MinIO no longer provides official Docker images. Use one of 
 | minimal/small | standalone | 1 |
 | medium/production | distributed | 4 |
 
-## Scripts
+## Installation
 
-```bash
-./scripts/install-minio.sh <mode> <size>
-./scripts/install-minio.sh standalone 50Gi
-./scripts/install-minio.sh distributed 100Gi
-```
+See [references/installation.md](references/installation.md) for deployment options:
+- Standalone: Single replica for minimal/small tiers
+- Distributed: 4 replicas for medium/production tiers
 
 ## Integrations
 
