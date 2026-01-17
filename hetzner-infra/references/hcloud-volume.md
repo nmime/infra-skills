@@ -78,7 +78,7 @@ mkdir -p /mnt/data
 mount /dev/sdb /mnt/data
 
 # Add to fstab for persistence
-echo '/dev/disk/by-id/scsi-0HC_Volume_XXXXXXX /mnt/data ext4 defaults 0 0' >> /etc/fstab
+echo '/dev/disk/by-id/scsi-0HC_Volume_<volume-id> /mnt/data ext4 defaults 0 0' >> /etc/fstab
 ```
 
 ## Delete Volume

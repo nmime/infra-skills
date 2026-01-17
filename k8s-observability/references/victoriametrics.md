@@ -4,7 +4,7 @@
 
 | Component | Version |
 |-----------|---------|
-| VictoriaMetrics | v1.122.12 (LTS) |
+| VictoriaMetrics | v1.133.0 |
 | VM Operator | v0.52.0 |
 | Grafana | 12.4.0 |
 

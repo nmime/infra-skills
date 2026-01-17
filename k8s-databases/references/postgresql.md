@@ -1,40 +1,21 @@
-# Percona PostgreSQL Operator
+# PostgreSQL HA Cluster
 
-## Version Information (Latest - January 2026)
+Percona PostgreSQL Operator v2.8.2 with PostgreSQL 18.x.
 
-| Component | Version |
-|-----------|---------|
-| Operator | 2.8.2 |
-| PostgreSQL | 18.x / 17.x / 16.x |
-| PgBouncer | 1.24.x |
-| pgBackRest | 2.54 |
-
-## Installation Script
+## Install Operator
 
 ```bash
-#!/bin/bash
-# scripts/install-pg-operator.sh
-
-set -euo pipefail
-
-OPERATOR_VERSION="2.8.2"
-
-echo "=== Installing Percona PostgreSQL Operator ==="
-
 helm repo add percona https://percona.github.io/percona-helm-charts/
 helm repo update
 
 helm upgrade --install pg-operator percona/pg-operator \
-  --namespace pg-operator \
-  --create-namespace \
-  --version ${OPERATOR_VERSION} \
-  --wait
+  --namespace pg-operator --create-namespace \
+  --version 2.8.2 --wait
 
-echo "=== Operator Installed ==="
 kubectl get pods -n pg-operator
 ```
 
-## PostgreSQL Cluster
+## HA Cluster
 
 ```yaml
 apiVersion: pgv2.percona.com/v2
@@ -44,9 +25,8 @@ metadata:
   namespace: databases
 spec:
   crVersion: "2.8.2"
-  image: percona/percona-postgresql-operator:2.8.2-ppg17-postgres
-  postgresVersion: 17
-  
+  postgresVersion: 18
+
   instances:
     - name: instance1
       replicas: 3
@@ -73,12 +53,21 @@ spec:
         resources:
           requests:
             storage: 20Gi
-  
+
   users:
     - name: myapp
       databases:
         - myapp
-  
+
+  proxy:
+    pgBouncer:
+      replicas: 2
+      config:
+        global:
+          pool_mode: transaction
+          max_client_conn: "1000"
+          default_pool_size: "25"
+
   backups:
     pgbackrest:
       repos:
@@ -94,15 +83,6 @@ spec:
               resources:
                 requests:
                   storage: 30Gi
-  
-  proxy:
-    pgBouncer:
-      replicas: 2
-      config:
-        global:
-          pool_mode: transaction
-          max_client_conn: "1000"
-          default_pool_size: "25"
 ```
 
 ## Get Connection
@@ -110,4 +90,14 @@ spec:
 ```bash
 kubectl get secret myapp-pg-pguser-myapp -n databases \
   -o jsonpath='{.data.uri}' | base64 -d
+```
+
+## Enable Monitoring
+
+```yaml
+spec:
+  monitoring:
+    pgmonitor:
+      exporter:
+        image: percona/postgres_exporter:0.15.0
 ```

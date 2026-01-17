@@ -34,7 +34,7 @@ For full management, use:
 apt install sshfs
 
 # Mount
-sshfs uXXXXXX@uXXXXXX.your-storagebox.de:/ /mnt/storage
+sshfs <username>@<username>.your-storagebox.de:/ /mnt/storage
 
 # Unmount
 fusermount -u /mnt/storage
@@ -48,17 +48,17 @@ apt install cifs-utils
 
 # Create credentials file
 cat > /root/.storage-credentials << 'CREDS'
-username=uXXXXXX
+username=<username>
 password=your-password
 CREDS
 chmod 600 /root/.storage-credentials
 
 # Mount
-mount -t cifs //uXXXXXX.your-storagebox.de/backup /mnt/storage \
+mount -t cifs //<username>.your-storagebox.de/backup /mnt/storage \
   -o credentials=/root/.storage-credentials
 
 # Add to fstab
-echo '//uXXXXXX.your-storagebox.de/backup /mnt/storage cifs credentials=/root/.storage-credentials,_netdev 0 0' >> /etc/fstab
+echo '//<username>.your-storagebox.de/backup /mnt/storage cifs credentials=/root/.storage-credentials,_netdev 0 0' >> /etc/fstab
 ```
 
 ## rsync Backup
@@ -67,11 +67,11 @@ echo '//uXXXXXX.your-storagebox.de/backup /mnt/storage cifs credentials=/root/.s
 # Backup to storage box
 rsync -avz --progress \
   /data/ \
-  uXXXXXX@uXXXXXX.your-storagebox.de:./backups/
+  <username>@<username>.your-storagebox.de:./backups/
 
 # Restore from storage box
 rsync -avz --progress \
-  uXXXXXX@uXXXXXX.your-storagebox.de:./backups/ \
+  <username>@<username>.your-storagebox.de:./backups/ \
   /data/
 ```
 

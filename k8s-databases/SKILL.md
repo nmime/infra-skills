@@ -9,23 +9,14 @@ Percona Operators for PostgreSQL and MongoDB. (Updated: January 2026). All deplo
 
 **Run from**: Bastion server or any machine with kubectl access.
 
-## Components
+## Percona Operators
 
-| Component | Version | Purpose |
-|-----------|---------|---------|
-| PG Operator | v2.8.2 | PostgreSQL management |
-| PSMDB Operator | v1.21.2 | MongoDB management |
-| pgBackRest | v2.54 | PostgreSQL backups |
-| PBM | v2.8.x | MongoDB backups |
+| Operator | Version | Database |
+|----------|---------|----------|
+| Percona PostgreSQL | v2.8.2 | PostgreSQL 18.x |
+| Percona Server MongoDB | v1.21.2 | MongoDB 8.0.x |
 
-## Versions
-
-| Database | Latest | Image |
-|----------|--------|-------|
-| PostgreSQL | 18.x | `percona/percona-postgresql-operator:2.8.2-ppg18-postgres` |
-| MongoDB | 8.0.x | `percona/percona-server-mongodb:8.0.17-6` |
-
-> Always use latest versions unless specific compatibility requirements exist.
+> Always use latest versions. Operators include built-in backup, monitoring, and HA management.
 
 ## Deployment Tiers
 
@@ -36,32 +27,22 @@ Percona Operators for PostgreSQL and MongoDB. (Updated: January 2026). All deplo
 
 ## Installation
 
-### PostgreSQL Operator
-
 ```bash
 helm repo add percona https://percona.github.io/percona-helm-charts/
 helm repo update
 
+# PostgreSQL Operator
 helm upgrade --install pg-operator percona/pg-operator \
-  --namespace pg-operator \
-  --create-namespace \
-  --version 2.8.2 \
-  --wait
-```
+  --namespace pg-operator --create-namespace \
+  --version 2.8.2 --wait
 
-### MongoDB Operator
-
-```bash
+# MongoDB Operator
 helm upgrade --install psmdb-operator percona/psmdb-operator \
-  --namespace psmdb-operator \
-  --create-namespace \
-  --version 1.21.2 \
-  --wait
+  --namespace psmdb-operator --create-namespace \
+  --version 1.21.2 --wait
 ```
 
-## Quick Deploy
-
-### PostgreSQL HA Cluster
+## PostgreSQL HA Cluster
 
 ```yaml
 apiVersion: pgv2.percona.com/v2
@@ -106,7 +87,7 @@ spec:
                   storage: 30Gi
 ```
 
-### MongoDB ReplicaSet
+## MongoDB ReplicaSet
 
 ```yaml
 apiVersion: psmdb.percona.com/v1
@@ -157,26 +138,27 @@ kubectl get secret myapp-mongo-secrets -n databases \
   -o jsonpath='{.data.MONGODB_DATABASE_ADMIN_URI}' | base64 -d
 ```
 
-## Monitoring
+## Monitoring with PMM
 
-Enable metrics exporters in cluster specs:
+Percona Monitoring and Management (PMM) provides Query Analytics, metrics, and alerting.
 
 ```yaml
-# PostgreSQL
-spec:
-  monitoring:
-    pgmonitor:
-      exporter:
-        image: percona/postgres_exporter:0.15.0
-
-# MongoDB - enabled by default with PMM
+# PostgreSQL with PMM
 spec:
   pmm:
     enabled: true
-    serverHost: monitoring-service
+    image: percona/pmm-client:2.44.0
+    serverHost: pmm-server.monitoring.svc.cluster.local
+
+# MongoDB with PMM
+spec:
+  pmm:
+    enabled: true
+    image: percona/pmm-client:2.44.0
+    serverHost: pmm-server.monitoring.svc.cluster.local
 ```
 
-See [references/monitoring.md](references/monitoring.md) for VMServiceScrape configs and Grafana dashboards.
+See [references/monitoring.md](references/monitoring.md) for PMM Server deployment and configuration.
 
 ## Reference Files
 

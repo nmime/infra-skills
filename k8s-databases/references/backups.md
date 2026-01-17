@@ -1,36 +1,21 @@
-# Database Backups with MinIO
+# Database Backups
 
-## Prerequisites
+Percona operators include built-in backup support. Use MinIO for S3-compatible storage.
 
-Install MinIO first from the `minio-storage` skill:
-
-```bash
-./scripts/install-minio.sh
-./scripts/create-buckets.sh
-```
-
-## PostgreSQL Backups (Percona Operator)
-
-### Create Backup Secret
+## PostgreSQL Backup Secret
 
 ```bash
-#!/bin/bash
-# scripts/create-postgres-backup-secret.sh
+MINIO_USER=$(kubectl get secret minio-credentials -n minio -o jsonpath='{.data.rootUser}' | base64 -d)
+MINIO_PASSWORD=$(kubectl get secret minio-credentials -n minio -o jsonpath='{.data.rootPassword}' | base64 -d)
 
-MINIO_NAMESPACE="minio"
-DATABASES_NAMESPACE="databases"
-
-MINIO_USER=$(kubectl get secret minio-credentials -n ${MINIO_NAMESPACE} -o jsonpath='{.data.rootUser}' | base64 -d)
-MINIO_PASSWORD=$(kubectl get secret minio-credentials -n ${MINIO_NAMESPACE} -o jsonpath='{.data.rootPassword}' | base64 -d)
-
-kubectl create namespace ${DATABASES_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+kubectl create namespace databases --dry-run=client -o yaml | kubectl apply -f -
 
 cat <<EOF | kubectl apply -f -
 apiVersion: v1
 kind: Secret
 metadata:
   name: postgres-backup-s3
-  namespace: ${DATABASES_NAMESPACE}
+  namespace: databases
 type: Opaque
 stringData:
   s3.conf: |
@@ -38,11 +23,9 @@ stringData:
     repo1-s3-key=${MINIO_USER}
     repo1-s3-key-secret=${MINIO_PASSWORD}
 EOF
-
-echo "PostgreSQL backup secret created!"
 ```
 
-### Cluster with MinIO Backups
+## PostgreSQL with S3 Backup
 
 ```yaml
 apiVersion: pgv2.percona.com/v2
@@ -52,9 +35,8 @@ metadata:
   namespace: databases
 spec:
   crVersion: "2.8.2"
-  image: percona/percona-postgresql-operator:2.8.2-ppg17-postgres
-  postgresVersion: 17
-  
+  postgresVersion: 18
+
   instances:
     - name: instance1
       replicas: 3
@@ -63,13 +45,7 @@ spec:
         resources:
           requests:
             storage: 20Gi
-  
-  users:
-    - name: myapp
-      databases:
-        - myapp
-  
-  # MinIO Backup Configuration
+
   backups:
     pgbackrest:
       global:
@@ -77,11 +53,9 @@ spec:
         repo1-retention-full: "7"
         repo1-retention-full-type: count
         repo1-s3-uri-style: path
-      
       configuration:
         - secret:
             name: postgres-backup-s3
-      
       repos:
         - name: repo1
           s3:
@@ -89,44 +63,30 @@ spec:
             endpoint: minio.minio.svc.cluster.local:9000
             region: us-east-1
           schedules:
-            full: "0 1 * * 0"      # Sunday 1 AM
-            incremental: "0 1 * * 1-6"  # Mon-Sat 1 AM
-  
-  proxy:
-    pgBouncer:
-      replicas: 2
+            full: "0 1 * * 0"
+            incremental: "0 1 * * 1-6"
 ```
 
-## MongoDB Backups (Percona Operator)
-
-### Create Backup Secret
+## MongoDB Backup Secret
 
 ```bash
-#!/bin/bash
-# scripts/create-mongodb-backup-secret.sh
-
-MINIO_NAMESPACE="minio"
-DATABASES_NAMESPACE="databases"
-
-MINIO_USER=$(kubectl get secret minio-credentials -n ${MINIO_NAMESPACE} -o jsonpath='{.data.rootUser}' | base64 -d)
-MINIO_PASSWORD=$(kubectl get secret minio-credentials -n ${MINIO_NAMESPACE} -o jsonpath='{.data.rootPassword}' | base64 -d)
+MINIO_USER=$(kubectl get secret minio-credentials -n minio -o jsonpath='{.data.rootUser}' | base64 -d)
+MINIO_PASSWORD=$(kubectl get secret minio-credentials -n minio -o jsonpath='{.data.rootPassword}' | base64 -d)
 
 cat <<EOF | kubectl apply -f -
 apiVersion: v1
 kind: Secret
 metadata:
   name: mongodb-backup-s3
-  namespace: ${DATABASES_NAMESPACE}
+  namespace: databases
 type: Opaque
 stringData:
   AWS_ACCESS_KEY_ID: "${MINIO_USER}"
   AWS_SECRET_ACCESS_KEY: "${MINIO_PASSWORD}"
 EOF
-
-echo "MongoDB backup secret created!"
 ```
 
-### Cluster with MinIO Backups
+## MongoDB with S3 Backup
 
 ```yaml
 apiVersion: psmdb.percona.com/v1
@@ -137,10 +97,7 @@ metadata:
 spec:
   crVersion: "1.21.2"
   image: percona/percona-server-mongodb:8.0.17-6
-  
-  secrets:
-    users: myapp-mongo-secrets
-  
+
   replsets:
     - name: rs0
       size: 3
@@ -150,41 +107,38 @@ spec:
           resources:
             requests:
               storage: 20Gi
-  
-  # MinIO Backup Configuration
+
   backup:
     enabled: true
-    image: percona/percona-backup-mongodb:2.8.0
     storages:
-      minio-backup:
+      minio:
         type: s3
         s3:
           bucket: mongodb-backups
           credentialsSecret: mongodb-backup-s3
           region: us-east-1
           endpointUrl: http://minio.minio.svc.cluster.local:9000
-          prefix: mongodb
           insecureSkipTLSVerify: true
     tasks:
-      - name: daily-backup
+      - name: daily
         enabled: true
         schedule: "0 2 * * *"
-        storageName: minio-backup
+        storageName: minio
         compressionType: gzip
 ```
 
-## Manual Backup Commands
+## Manual Backup
 
 ```bash
-# PostgreSQL - Trigger manual backup
+# PostgreSQL
 kubectl annotate perconapgcluster myapp-pg -n databases \
   postgres-operator.crunchydata.com/pgbackrest-backup="$(date +%s)" --overwrite
 
-# PostgreSQL - Check backup status
+# PostgreSQL - check status
 kubectl exec -it myapp-pg-instance1-0 -n databases -- pgbackrest info
 
-# MongoDB - Trigger manual backup
-kubectl apply -f - <<EOF
+# MongoDB
+cat <<EOF | kubectl apply -f -
 apiVersion: psmdb.percona.com/v1
 kind: PerconaServerMongoDBBackup
 metadata:
@@ -192,22 +146,22 @@ metadata:
   namespace: databases
 spec:
   clusterName: myapp-mongo
-  storageName: minio-backup
+  storageName: minio
 EOF
 
-# MongoDB - List backups
+# MongoDB - list backups
 kubectl get psmdb-backup -n databases
 ```
 
-## Restore from Backup
+## Restore
 
 ```bash
-# PostgreSQL restore
+# PostgreSQL
 kubectl annotate perconapgcluster myapp-pg -n databases \
   postgres-operator.crunchydata.com/pgbackrest-restore="$(date +%s)" --overwrite
 
-# MongoDB restore
-kubectl apply -f - <<EOF
+# MongoDB
+cat <<EOF | kubectl apply -f -
 apiVersion: psmdb.percona.com/v1
 kind: PerconaServerMongoDBRestore
 metadata:
@@ -215,6 +169,6 @@ metadata:
   namespace: databases
 spec:
   clusterName: myapp-mongo
-  backupName: daily-backup-XXXXX
+  backupName: <backup-name>
 EOF
 ```
