@@ -18,23 +18,14 @@ Percona Operators for PostgreSQL and MongoDB. (Updated: January 2026). All deplo
 | pgBackRest | v2.54 | PostgreSQL backups |
 | PBM | v2.8.x | MongoDB backups |
 
-## Supported Versions
+## Versions
 
-### PostgreSQL
+| Database | Latest | Image |
+|----------|--------|-------|
+| PostgreSQL | 18.x | `percona/percona-postgresql-operator:2.8.2-ppg18-postgres` |
+| MongoDB | 8.0.x | `percona/percona-server-mongodb:8.0.17-6` |
 
-| Version | Status |
-|---------|--------|
-| PostgreSQL 18.x | Latest |
-| PostgreSQL 17.x | Supported |
-| PostgreSQL 16.x | Supported |
-| PostgreSQL 15.x | Supported |
-
-### MongoDB
-
-| Version | Status |
-|---------|--------|
-| MongoDB 8.0.x | Latest |
-| MongoDB 7.0.x | Supported |
+> Always use latest versions unless specific compatibility requirements exist.
 
 ## Deployment Tiers
 
@@ -80,7 +71,7 @@ metadata:
   namespace: databases
 spec:
   crVersion: "2.8.2"
-  postgresVersion: 17
+  postgresVersion: 18
 
   instances:
     - name: instance1
