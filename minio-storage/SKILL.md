@@ -7,9 +7,7 @@ description: MinIO S3-compatible object storage on Kubernetes. Use when deployin
 
 S3-compatible storage for platform services. (Updated: January 2026). All scripts are **idempotent** - uses `helm upgrade --install`.
 
-**Run from**: Bastion server or any machine with kubectl access.
-
-## ⚠️ Important: MinIO Image Source Change
+## MinIO Image Source Change
 
 As of October 2025, MinIO no longer provides official Docker images. Use one of these alternatives:
 

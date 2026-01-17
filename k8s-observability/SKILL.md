@@ -7,8 +7,6 @@ description: VictoriaMetrics + Loki + Grafana. Light or full mode.
 
 VictoriaMetrics v1.133.0 + Loki v3.6.3 + Grafana v12.3.1. (Updated: January 2026). All scripts are **idempotent** - uses `helm upgrade --install`.
 
-**Run from**: Bastion server or any machine with kubectl access.
-
 ## Known Issues
 
 | Issue | Affected | Workaround |

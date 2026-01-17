@@ -7,8 +7,6 @@ description: VPN access and firewall rules. Headscale VPN on bastion for admin a
 
 Headscale v0.27.1 VPN and firewall for secure admin access. (Updated: January 2026). All scripts are **idempotent** - check state before applying changes.
 
-**Run from**: Bastion server (scripts execute on bastion itself).
-
 ## Responsibility
 
 | This Skill | Other Skills |
@@ -54,7 +52,3 @@ tailscale up --login-server https://vpn.example.com --authkey <KEY>
 - [references/firewall.md](references/firewall.md) - Firewall rules
 - [references/bastion.md](references/bastion.md) - Bastion hardening
 - [references/architecture.md](references/architecture.md) - Network architecture
-- [references/hetzner-network.md](references/hetzner-network.md) - Hetzner network setup
-- [references/load-balancer.md](references/load-balancer.md) - Load balancer
-- [references/dns.md](references/dns.md) - DNS configuration
-- [references/tls.md](references/tls.md) - TLS certificates

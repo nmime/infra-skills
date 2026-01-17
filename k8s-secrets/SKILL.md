@@ -7,8 +7,6 @@ description: Vault + External Secrets Operator for secrets management.
 
 HashiCorp Vault v1.21.2 + ESO v1.2.1. (Updated: January 2026). All scripts are **idempotent** - uses `helm upgrade --install`.
 
-**Run from**: Bastion server or any machine with kubectl access.
-
 ## Components
 
 | Component | Version |

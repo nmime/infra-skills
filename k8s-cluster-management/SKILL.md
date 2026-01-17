@@ -1,23 +1,11 @@
 ---
 name: k8s-cluster-management
-description: Kubernetes installation (Kubespray) + core addons (Cilium, Gateway API, cert-manager, LoadBalancer). Multi-cloud support.
+description: Kubernetes cluster installation via Kubespray. Always use Kubespray for cluster provisioning. Includes core addons (Cilium, Gateway API, cert-manager, LoadBalancer). Multi-cloud support.
 ---
 
 # K8s Cluster Management
 
-Kubernetes via **Kubespray** + core addons. (Updated: January 2026). All scripts are **idempotent** - Kubespray playbooks converge to desired state.
-
-**Run from**: Bastion server (Ansible runs from bastion to cluster nodes).
-
-## Cloud Provider Support
-
-| Provider | LoadBalancer | Script Flag |
-|----------|--------------|-------------|
-| `hetzner` | Hetzner CCM v1.22.0 | `--provider hetzner` |
-| `aws` | AWS Cloud Provider | `--provider aws` |
-| `gcp` | GCP Cloud Provider | `--provider gcp` |
-| `azure` | Azure Cloud Provider | `--provider azure` |
-| `baremetal` | MetalLB v0.14.9 | `--provider baremetal` |
+**Always use Kubespray for Kubernetes cluster installation.** Kubespray playbooks are idempotent and converge to desired state.
 
 ## Components (January 2026)
 
@@ -33,17 +21,6 @@ Kubernetes via **Kubespray** + core addons. (Updated: January 2026). All scripts
 | MetalLB | v0.14.9 | Bare metal LB |
 
 > **Note**: For K8s v1.35.0, wait for Kubespray v2.30+.
-
-## Tiers
-
-| Tier | Masters | Workers | HA |
-|------|---------|---------|----|
-| minimal | 1* | 1 | ❌ |
-| small | 1 | 2 | ❌ |
-| medium | 3 | 2 | ✅ |
-| production | 3 | 3+ | ✅ |
-
-*schedulable
 
 ## Installation
 

@@ -7,8 +7,6 @@ description: Orchestrates all skills for unified platform deployment. All servic
 
 Unified deployment orchestration. **All services enabled by default.** All deployments are **idempotent** - safe to run multiple times.
 
-**Run from**: Bastion server or sandboxed environment.
-
 ## Cloud Provider Support
 
 | Provider | LoadBalancer | Status |
@@ -24,30 +22,6 @@ Set in `platform.yaml`:
 infrastructure:
   cloud_provider: hetzner  # hetzner | aws | gcp | azure | baremetal
 ```
-
-## Component Versions (January 2026)
-
-| Component | Version |
-|-----------|---------|
-| Kubespray | v2.29.1 |
-| Kubernetes | v1.34.3 |
-| etcd | v3.5.26 |
-| containerd | v2.2.1 |
-| Cilium | v1.18.6 |
-| Gateway API | v1.4.0 |
-| cert-manager | v1.19.2 |
-| ArgoCD | v3.2.5 |
-| Vault | v1.21.2 |
-| ESO | v1.2.1 |
-| VictoriaMetrics | v1.133.0 |
-| Grafana | v12.3.1 |
-| Loki | v3.6.3 |
-| KEDA | v2.18.x |
-| PostgreSQL (Percona) | v2.8.2 |
-| MinIO (Bitnami) | v17.0.21 |
-| MetalLB | v0.14.9 |
-
-> **Note**: MinIO official images discontinued Oct 2025. Using Bitnami Helm chart.
 
 ## Naming Convention
 
@@ -106,11 +80,15 @@ Run from bastion server. See reference files for detailed procedures:
 - Day-to-day: [references/operations.md](references/operations.md)
 - Self-healing: [references/self-healing.md](references/self-healing.md)
 
+## Autonomous Deployment
+
+**Do not ask the user to do tasks that can be automated.** Configure DNS, provision servers, install services - proceed autonomously. Only ask when user input is truly required (credentials, domain choice, tier selection).
+
 ## Deployment Order
 
 ```
 1. infra      → hetzner-infra (servers, network, LB)
-2. dns        → hetzner-infra (records for enabled services)
+2. dns        → hetzner-infra (records for enabled services) ← configure automatically
 3. cluster    → k8s-cluster-management (Kubespray)
 4. tls        → k8s-cluster-management (cert-manager)
 5. minio      → minio-storage

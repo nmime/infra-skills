@@ -5,8 +5,6 @@ description: Full-stack setup with Brocoders NestJS backend and Extensive React 
 
 # Brocoders Boilerplate Setup
 
-**Run from**: Any development environment with git access.
-
 Comprehensive guide for setting up full-stack applications using:
 - **Backend**: [NestJS Boilerplate](https://github.com/brocoders/nestjs-boilerplate)
 - **Frontend**: [Extensive React Boilerplate](https://github.com/brocoders/extensive-react-boilerplate)

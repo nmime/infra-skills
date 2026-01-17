@@ -7,8 +7,6 @@ description: KEDA event-driven autoscaling for Kubernetes. Use when installing K
 
 KEDA v2.18.x (70+ built-in scalers). (Updated: January 2026). All scripts are **idempotent** - uses `helm upgrade --install`.
 
-**Run from**: Bastion server or any machine with kubectl access.
-
 ## Important Changes in v2.18
 
 | Change | Details |

@@ -7,8 +7,6 @@ description: GitLab CE self-hosted deployment on Kubernetes. Use when installing
 
 GitLab CE v18.7.1 with tier-based resources. (Updated: January 2026)
 
-**Run from**: Bastion server or any machine with kubectl access.
-
 ## Maintenance Policy
 
 | Version | Status |

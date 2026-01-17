@@ -7,8 +7,6 @@ description: ArgoCD GitOps continuous delivery for Kubernetes. Use when installi
 
 ArgoCD v3.2.5. (Updated: January 2026). All scripts are **idempotent** - uses `kubectl apply` for convergent state.
 
-**Run from**: Bastion server or any machine with kubectl access.
-
 ## Version Support
 
 | Version | Status |
@@ -19,13 +17,6 @@ ArgoCD v3.2.5. (Updated: January 2026). All scripts are **idempotent** - uses `k
 | < v2.13 | End of Life |
 
 > ArgoCD releases every 3 months. Only 3 most recent minor versions receive patches.
-
-## Installation
-
-```bash
-kubectl create namespace argocd
-kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.2.5/manifests/ha/install.yaml
-```
 
 ## Installation
 
