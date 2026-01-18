@@ -98,106 +98,19 @@ infrastructure:
 
 ## Environment Profiles
 
-### Production (~€48/mo)
-```yaml
-global:
-  environment: production
+Pre-configured profiles available in `profiles/`:
 
-kubernetes:
-  version: v1.34.3  # Kubespray v2.29.1
+| Profile | File |
+|---------|------|
+| Minimal | `profiles/minimal.yaml` |
+| Small | `profiles/small.yaml` |
+| Medium | `profiles/medium.yaml` |
+| Production | `profiles/production.yaml` |
 
-infrastructure:
-  bastion:
-    type: cx23      # 2 vCPU, 4GB - €2.99/mo
-  control_plane:
-    count: 3
-    type: cx33      # 4 vCPU, 8GB - €4.99/mo
-  workers:
-    count: 3
-    type: cx33      # 4 vCPU, 8GB - €4.99/mo
-
-storage:
-  replicas: 4
-  size_per_replica: 100Gi
-
-databases:
-  postgresql:
-    replicas: 3
-```
-
-### Medium (~€34/mo)
-```yaml
-global:
-  environment: staging
-
-infrastructure:
-  bastion:
-    type: cx23      # 2 vCPU, 4GB - €2.99/mo
-  control_plane:
-    count: 3
-    type: cx23      # 2 vCPU, 4GB - €2.99/mo
-  workers:
-    count: 2
-    type: cx33      # 4 vCPU, 8GB - €4.99/mo
-
-storage:
-  replicas: 4
-  size_per_replica: 50Gi
-
-databases:
-  postgresql:
-    replicas: 2
-```
-
-### Small (~€28-35/mo)
-```yaml
-global:
-  environment: development
-
-infrastructure:
-  bastion:
-    type: cx22      # 2 vCPU, 4GB
-  control_plane:
-    count: 1
-    type: cx22
-  workers:
-    count: 2
-    type: cx32
-
-storage:
-  replicas: 1
-  size_per_replica: 100Gi
-
-databases:
-  postgresql:
-    replicas: 1
-```
-
-### Minimal (~€18-20/mo)
-```yaml
-global:
-  environment: development
-
-infrastructure:
-  bastion:
-    type: cx22
-  control_plane:
-    count: 1
-    type: cx32
-    schedulable: true    # Also runs workloads
-  workers:
-    count: 1
-    type: cx22
-  load_balancer:
-    enabled: false       # Bastion proxies traffic
-
-storage:
-  replicas: 1
-  size_per_replica: 50Gi
-
-databases:
-  postgresql:
-    replicas: 1
+```bash
+# Use a profile as starting point
+cp profiles/small.yaml platform.yaml
+vim platform.yaml  # customize domain, project
 ```
 
 ## Component Toggle

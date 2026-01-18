@@ -109,7 +109,7 @@ Run from bastion server. See reference files for detailed procedures:
 | medium | ~€34/mo | 5 | ✅ | Small production |
 | production | ~€48/mo | 6 | ✅ | Full production |
 
-See `profiles/*.yaml` for full configs or `references/configuration.md` for details.
+See `profiles/*.yaml` for full configs.
 
 ## Service Dependencies
 
