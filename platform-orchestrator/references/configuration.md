@@ -149,24 +149,51 @@ databases:
     replicas: 2
 ```
 
-### Small (~€21/mo)
+### Small (~€28-35/mo)
 ```yaml
 global:
   environment: development
 
 infrastructure:
   bastion:
-    type: cx23      # 2 vCPU, 4GB - €2.99/mo
+    type: cx22      # 2 vCPU, 4GB
   control_plane:
     count: 1
-    type: cx23      # 2 vCPU, 4GB - €2.99/mo
+    type: cx22
   workers:
     count: 2
-    type: cx23      # 2 vCPU, 4GB - €2.99/mo
+    type: cx32
 
 storage:
   replicas: 1
-  size_per_replica: 20Gi
+  size_per_replica: 100Gi
+
+databases:
+  postgresql:
+    replicas: 1
+```
+
+### Minimal (~€18-20/mo)
+```yaml
+global:
+  environment: development
+
+infrastructure:
+  bastion:
+    type: cx22
+  control_plane:
+    count: 1
+    type: cx32
+    schedulable: true    # Also runs workloads
+  workers:
+    count: 1
+    type: cx22
+  load_balancer:
+    enabled: false       # Bastion proxies traffic
+
+storage:
+  replicas: 1
+  size_per_replica: 50Gi
 
 databases:
   postgresql:

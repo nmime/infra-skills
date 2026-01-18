@@ -102,12 +102,14 @@ Run from bastion server. See reference files for detailed procedures:
 
 ## Tiers
 
-| Tier | Cost | Nodes | HA |
-|------|------|-------|----|
-| minimal | ~€12/mo | 2 | ❌ |
-| small | ~€21/mo | 3 | ❌ |
-| medium | ~€34/mo | 5 | ✅ |
-| production | ~€48/mo | 6 | ✅ |
+| Tier | Cost | Nodes | HA | Use Case |
+|------|------|-------|----|----------|
+| minimal | ~€18-20/mo | 2 | ❌ | Dev, testing, learning |
+| small | ~€28-35/mo | 3 | ❌ | Startups, staging |
+| medium | ~€34/mo | 5 | ✅ | Small production |
+| production | ~€48/mo | 6 | ✅ | Full production |
+
+See `profiles/*.yaml` for full configs or `references/configuration.md` for details.
 
 ## Service Dependencies
 
