@@ -178,37 +178,38 @@ Each mode has specific parameters in `references/mode-[name].md`.
 
 ## Telegram Notifications
 
-**IMPORTANT:** Always use FIXED Telegram chat_id: `305544740` (not session chat_id)
+**MUST send to Telegram** after every trade action using:
+- chat_id: `305544740` (FIXED, not session ID)
+- parse_mode: `Markdown`
 
-### Message Templates
+### Message Format (send to Telegram)
 
 ```
-// Entry
-🟢 LONG {COIN} @ ${ENTRY} | {LEV}x | Risk: ${RISK} | Next: {SCAN_INTERVAL}
+// Entry - ALWAYS include Next scan time
+🟢 LONG {COIN} @ ${ENTRY} | {LEV}x | Next: {SCAN_INTERVAL}
 
 // Exit - Win
-✅ {COIN} +${PNL} (+{PCT}%) | {W}W/{L}L | Next: {SCAN_INTERVAL}
+✅ {COIN} +${PNL} (+{PCT}%) | Next: {SCAN_INTERVAL}
 
 // Exit - Loss
-❌ {COIN} -${PNL} | Streak: {N} | Next: {SCAN_INTERVAL}
+❌ {COIN} -${PNL} | Next: {SCAN_INTERVAL}
 
-// Scan Status (no trade)
-🔍 No setup found | Next: {SCAN_INTERVAL}
+// Scan - No trade
+🔍 No setup | Next: {SCAN_INTERVAL}
 
-// Alerts
-⚠️ Down {DD}% → reducing size | Next: {SCAN_INTERVAL}
-🧊 3 losses → cooldown 30min
+// Target hit
 🎉 TARGET! +{RETURN}%
-
-// Daily Summary
-📊 {PNL_PCT}% | {W}W/{L}L | ${BAL} | Next: {SCAN_INTERVAL}
 ```
 
-**{SCAN_INTERVAL}** = Mode-specific: 10min (Degen), 20min (Aggressive), 2hr (Balanced), 3d (Conservative)
+**{SCAN_INTERVAL}** values:
+- Degen: `10min`
+- Aggressive: `20min`
+- Balanced: `2hr`
+- Conservative: `3d`
 
 ### Output Rule
-- **Chat**: Full details + reasoning
-- **Telegram**: Brief summary only
+- **Chat**: Full details + thesis
+- **Telegram**: Brief summary with Next scan time (REQUIRED)
 
 ## Agent Autonomy
 
