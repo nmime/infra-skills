@@ -24,40 +24,89 @@ Autonomous Hyperliquid trading agent with persistent state via KV storage.
 ```javascript
 const MODE_CONFIG = {
   degen: {
-    leverage_min: 15, leverage_max: 25,
-    position_pct: 0.25,
-    sl_pct: 10, tp_pct: 20,
+    leverage: 'MAX',              // Use coin's max leverage
+    position_pct: [0.30, 0.50],   // 30-50% based on confidence
+    sl_pct: [10, 15],             // 10-15%
+    tp_pct: [15, 25],             // 15-25%
+    trailing: { trigger: 20, distance: 15 },  // Trail 15% after +20%
     confidence_min: 5,
-    scan_interval: 600,
-    slippage: 0.8, max_spread: 0.5,
-    daily_loss_limit: 15
+    scan_interval: { base: 7200, volatile: 1800, quiet: 14400 },  // 2hr/30min/4hr
+    daily_loss_limit: 15,
+    max_positions: 2,
+    // Risk profile: YOLO
+    skip_btc_check: true,
+    skip_time_filter: true,
+    skip_funding_check: true,
+    slippage: 1.0, max_spread: 1.0,
+    min_liquidity_mult: 5
   },
   aggressive: {
-    leverage_min: 5, leverage_max: 15,
-    position_pct: 0.15,
-    sl_pct: 6, tp_pct: 12,
+    leverage: [10, 20],           // 10-20x
+    position_pct: [0.15, 0.25],   // 15-25%
+    sl_pct: [5, 8],               // 5-8%
+    tp_pct: [12, 20],             // 12-20%
+    trailing: { trigger: 15, distance: 4 },
     confidence_min: 6,
-    scan_interval: 1200,
-    slippage: 0.5, max_spread: 0.3,
-    daily_loss_limit: 10
+    scan_interval: { base: 3600, volatile: 1200, quiet: 7200 },  // 1hr/20min/2hr
+    daily_loss_limit: 10,
+    max_positions: 3,
+    // Risk profile: High
+    skip_btc_check: false,        // Check but don't hard skip
+    skip_time_filter: false,
+    skip_funding_check: false,
+    slippage: 0.5, max_spread: 0.5,
+    min_liquidity_mult: 8
   },
   balanced: {
-    leverage_min: 3, leverage_max: 5,
-    position_pct: 0.10,
-    sl_pct: 4, tp_pct: 8,
+    leverage: [3, 7],             // 3-7x
+    position_pct: [0.08, 0.12],   // 8-12%
+    sl_pct: [3, 5],               // 3-5%
+    tp_pct: [8, 12],              // 8-12%
+    trailing: { trigger: 10, distance: 3 },
     confidence_min: 7,
-    scan_interval: 7200,
+    scan_interval: { base: 7200, volatile: 3600, quiet: 14400 },  // 2hr/1hr/4hr
+    daily_loss_limit: 8,
+    max_positions: 4,
+    // Risk profile: Moderate
+    btc_alignment: 'REQUIRED',
+    skip_time_filter: false,
+    skip_funding_check: false,
     slippage: 0.3, max_spread: 0.2,
-    daily_loss_limit: 8
+    min_liquidity_mult: 10
   },
   conservative: {
-    leverage_min: 1, leverage_max: 2,
-    position_pct: 0.06,
-    sl_pct: 2.5, tp_pct: 5,
+    leverage: [1, 2],             // 1-2x
+    position_pct: [0.05, 0.08],   // 5-8%
+    sl_pct: [2, 3],               // 2-3%
+    tp_pct: [5, 8],               // 5-8%
+    trailing: { trigger: 6, distance: 2 },
     confidence_min: 8,
-    scan_interval: 259200,
+    scan_interval: { base: 259200, volatile: 86400, quiet: 432000 },  // 3d/1d/5d
+    daily_loss_limit: 5,
+    max_positions: 6,
+    max_margin: 0.60,
+    // Risk profile: Capital preservation
+    btc_alignment: 'REQUIRED',
+    funding_check: 'STRICT',      // Hard skip if against
+    weekend_trading: false,
     slippage: 0.2, max_spread: 0.15,
-    daily_loss_limit: 5
+    min_liquidity_mult: 15
+  }
+}
+```
+
+## Risk Profiles
+
+```javascript
+function get_risk_checks(mode) {
+  const config = MODE_CONFIG[mode]
+  return {
+    check_btc: !config.skip_btc_check,
+    check_time: !config.skip_time_filter,
+    check_funding: !config.skip_funding_check,
+    btc_hard_skip: config.btc_alignment === 'REQUIRED',
+    funding_hard_skip: config.funding_check === 'STRICT',
+    min_liquidity: config.min_liquidity_mult
   }
 }
 ```
@@ -316,20 +365,49 @@ async function record_trade(chat_id, trade) {
 }
 ```
 
-## Slippage Protection
+## Bracket Order (Atomic Entry + TP + SL)
 
 ```javascript
-async function place_protected_order(coin, is_buy, size, mode) {
-  const slippage = { degen: 0.008, aggressive: 0.005, balanced: 0.003, conservative: 0.002 }[mode]
-  const price = await hyperliquid_get_price(coin)
-  const limit = is_buy ? price * (1 + slippage) : price * (1 - slippage)
+async function place_bracket_order(coin, is_buy, size, entry_price, tp_price, sl_price, mode) {
+  const slippage = MODE_CONFIG[mode].slippage / 100
+  const limit_price = is_buy
+    ? entry_price * (1 + slippage)
+    : entry_price * (1 - slippage)
 
+  // Single atomic order with TP and SL attached
   return await hyperliquid_place_order({
     coin, is_buy, size,
     order_type: "limit",
-    price: limit,
+    price: limit_price,
+    time_in_force: "IOC",
+    take_profit: { trigger_price: tp_price },
+    stop_loss: { trigger_price: sl_price }
+  })
+}
+```
+
+## Fallback: Separate Orders
+
+```javascript
+async function place_orders_separate(coin, is_buy, size, entry_price, tp_price, sl_price, mode) {
+  const slippage = MODE_CONFIG[mode].slippage / 100
+  const limit_price = is_buy
+    ? entry_price * (1 + slippage)
+    : entry_price * (1 - slippage)
+
+  const entry = await hyperliquid_place_order({
+    coin, is_buy, size,
+    order_type: "limit",
+    price: limit_price,
     time_in_force: "IOC"
   })
+
+  if (entry.filled) {
+    await hyperliquid_place_order({ coin, is_buy: !is_buy, size, order_type: "take_profit", trigger_price: tp_price, reduce_only: true })
+    await hyperliquid_place_order({ coin, is_buy: !is_buy, size, order_type: "stop_loss", trigger_price: sl_price, reduce_only: true })
+  }
+
+  return entry
 }
 ```
 
@@ -467,6 +545,136 @@ async function check_funding_edge(coin, direction) {
 }
 ```
 
+## Adaptive Scan Interval
+
+```javascript
+async function get_scan_interval(mode) {
+  const config = MODE_CONFIG[mode]
+  const intervals = config.scan_interval
+
+  // Check market volatility (BTC 1h change)
+  const btc = await hyperliquid_get_candles({ coin: 'BTC', interval: '1h', limit: 2 })
+  const volatility = Math.abs((btc[1].close - btc[0].close) / btc[0].close * 100)
+
+  if (volatility > 3) return intervals.volatile    // High vol: scan faster
+  if (volatility < 0.5) return intervals.quiet     // Low vol: scan slower
+  return intervals.base                             // Normal: base interval
+}
+```
+
+## Trailing Stop Management
+
+```javascript
+async function check_trailing_stop(position, mode) {
+  const config = MODE_CONFIG[mode]
+  const trailing = config.trailing
+  const pnl_pct = position.unrealizedPnl / position.marginUsed * 100
+
+  if (pnl_pct >= trailing.trigger) {
+    const trail_price = position.markPx * (position.szi > 0
+      ? (1 - trailing.distance / 100)
+      : (1 + trailing.distance / 100))
+
+    const current_stop = await get_current_stop(position.coin)
+    const is_better = position.szi > 0
+      ? trail_price > current_stop
+      : trail_price < current_stop
+
+    if (is_better) {
+      await move_stop_loss(position.coin, trail_price)
+      return { moved: true, new_stop: trail_price, locked: pnl_pct - trailing.distance }
+    }
+  }
+  return { moved: false }
+}
+```
+
+## Progress Calculation
+
+```javascript
+function calculate_progress(current, starting, target) {
+  const gained = current - starting
+  const needed = target - starting
+  const progress_pct = (gained / needed * 100).toFixed(0)
+  return {
+    progress_pct,
+    gained,
+    remaining: target - current,
+    on_track: current >= starting
+  }
+}
+```
+
+## Parameter Selection (Confidence-Based)
+
+```javascript
+function select_params(mode, confidence) {
+  const config = MODE_CONFIG[mode]
+  const conf_factor = (confidence - config.confidence_min) / (10 - config.confidence_min)
+
+  // Higher confidence = higher end of range
+  const pick = (range) => Array.isArray(range)
+    ? range[0] + (range[1] - range[0]) * conf_factor
+    : range
+
+  return {
+    leverage: config.leverage === 'MAX' ? 'MAX' : pick(config.leverage),
+    position_pct: pick(config.position_pct),
+    sl_pct: pick(config.sl_pct),
+    tp_pct: pick(config.tp_pct)
+  }
+}
+```
+
+## Telegram Messages (Mode-Specific)
+
+```javascript
+const NOTIFICATIONS = {
+  degen: {
+    start: "🎰 DEGEN MODE | $${bal} → $${target} (+${pct}%) | LFG",
+    entry: "🎰 YOLO ${dir} ${coin} @ $${price} | ${lev}x | TP $${tp} SL $${sl}",
+    win: "💰 ${coin} PRINTED +$${pnl} (+${pct}%) | $${bal} | ${progress}% to target",
+    loss: "💀 ${coin} REKT -$${pnl} (${pct}%) | $${bal} | ${progress}% to target",
+    scan: "👀 Scanning for plays... | ${pos}/${max} positions | $${bal}",
+    trail: "🔥 ${coin} MOONING +${pnl}% | Trailing at +${locked}%",
+    target: "🎉🎰 TARGET HIT! $${start} → $${final} (+${ret}%) | WAGMI"
+  },
+  aggressive: {
+    start: "🚀 Aggressive | $${bal} → $${target} (+${pct}%)",
+    entry: "🟢 ${dir} ${coin} @ $${price} | ${lev}x | TP $${tp} SL $${sl}",
+    win: "✅ ${coin} +$${pnl} (+${pct}%) | $${bal} | ${progress}% to target",
+    loss: "❌ ${coin} -$${pnl} (${pct}%) | $${bal} | ${progress}% to target",
+    scan: "🔍 Scanning | ${pos}/${max} | $${bal}",
+    trail: "🔒 ${coin} +${pnl}% | Trailing at +${locked}%",
+    target: "🎉 TARGET! $${start} → $${final} (+${ret}%)"
+  },
+  balanced: {
+    start: "⚖️ Balanced | $${bal} → $${target} (+${pct}%)",
+    entry: "📊 ${dir} ${coin} @ $${price} | ${lev}x | R:R ${rr}",
+    win: "✅ ${coin} +$${pnl} (+${pct}%) | $${bal} | ${progress}%",
+    loss: "❌ ${coin} -$${pnl} (${pct}%) | $${bal}",
+    scan: "📊 Portfolio: ${pos}/${max} | $${bal} | ${progress}%",
+    trail: "🔒 ${coin} secured at +${locked}%",
+    target: "🎯 Target reached: $${start} → $${final} (+${ret}%)"
+  },
+  conservative: {
+    start: "🛡️ Conservative | $${bal} → $${target} (+${pct}%/year)",
+    entry: "🛡️ ${dir} ${coin} @ $${price} | ${lev}x | Safe entry",
+    win: "✓ ${coin} +$${pnl} (+${pct}%)",
+    loss: "✗ ${coin} -$${pnl} (${pct}%)",
+    scan: "📅 3-Day Check | ${pos}/${max} | Cash: ${cash}%",
+    trail: "🔒 ${coin} protected at +${locked}%",
+    target: "🏆 Annual target: $${start} → $${final} (+${ret}%)"
+  }
+}
+
+function notify(mode, event, data) {
+  const template = NOTIFICATIONS[mode][event]
+  const msg = template.replace(/\$\{(\w+)\}/g, (_, k) => data[k] ?? '')
+  telegram_send_message({ text: msg })
+}
+```
+
 ## Cleanup
 
 ```javascript
@@ -493,19 +701,11 @@ ${stats.total_trades} trades | ${stats.wins}W/${stats.losses}L`
 
 ## Telegram Templates
 
-Session start: `🚀 {MODE} | ${BAL} → ${TARGET} (+{PCT}%) | {INTERVAL}`
+Use `notify(mode, event, data)` for mode-specific messages. See NOTIFICATIONS object above.
 
-Entry: `🟢 {DIR} {COIN} @ ${PRICE} | {LEV}x | TP ${TP} SL ${SL}`
+Partial (shared): `💰 {COIN} Partial #{N}: 30% at +{PNL}%`
 
-Win: `✅ {COIN} +${PNL} (+{PCT}%) | ${BAL} | {W}W/{L}L`
-
-Loss: `❌ {COIN} -${PNL} ({PCT}%) | ${BAL} | {W}W/{L}L`
-
-Stop moved: `🔒 {COIN} +{PNL}% → SL at {LOCKED}%`
-
-Partial: `💰 {COIN} Partial #{N}: 30% at +{PNL}%`
-
-Target: `🎉 TARGET! ${START} → ${FINAL} (+{RET}%) | {W}W/{L}L`
+Stats (every 5 trades): `📊 {total_trades} trades | {wr}% WR | {total_pnl}% total`
 
 ## Hard Limits
 

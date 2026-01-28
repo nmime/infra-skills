@@ -1,6 +1,6 @@
 # Balanced Mode
 
-Trend Following + Multi-Confirm | Top 30 | 3-5x | 2hr scans
+Trend Following + Multi-Confirm | Top 30 | 3-7x | 2hr scans
 
 ## Config
 
@@ -10,24 +10,20 @@ target: +25% to +50% based on account size
   $100-1000: +40%
   >$1000: +25%
 
-leverage: 3-5x
-position: 10% of account
-sl: -4%
-tp: +8% (min 2x SL)
+leverage: 3-7x (confidence-based)
+position: 8-12% of account (confidence-based)
+sl: -3% to -5%
+tp: +8% to +12%
+trailing: 3% distance after +10% profit
 max_positions: 4
-scan: 2hr
+scan: 2hr base (1hr volatile, 4hr quiet)
 daily_limit: -8%
 confidence_min: 7
-btc_alignment: REQUIRED
-```
 
-## Dynamic Stops
-
-```
-+3%  → breakeven (-0.2%)
-+5%  → +2% locked
-+8%  → +5% locked
-+10% → trail 3% below max
+risk_profile: Moderate
+  btc_alignment: REQUIRED (hard skip)
+  check_funding: true (penalty)
+  check_time: true (size reduction)
 ```
 
 ## Setup
@@ -46,7 +42,7 @@ const target = starting * (1 + target_pct / 100)
 
 await init_session(chat_id, 'balanced', starting, target)
 
-telegram_send_message({ text: `⚖️ Balanced | $${starting} → $${target} (+${target_pct}%) | 2hr` })
+notify('balanced', 'start', { bal: starting, target, pct: target_pct })
 ```
 
 ### Step 1: Create Webhook
@@ -87,9 +83,6 @@ OK to recommend nothing if unclear.`
 hyperliquid_get_meta({ coin })
 hyperliquid_get_all_prices({ coins: [coin] })
 hyperliquid_get_funding_rates({ coin })
-
-// Check not already in portfolio
-// Funding not extreme
 ```
 
 ### Step 3b: Pre-Trade Checks
@@ -98,19 +91,19 @@ hyperliquid_get_funding_rates({ coin })
 const liq = await check_liquidity(coin, margin, 'balanced')
 if (!liq.ok) return SKIP
 
-// BTC alignment REQUIRED for balanced
+// BTC alignment REQUIRED (hard skip)
 const btc = await check_btc_alignment(coin, direction)
-if (!btc.aligned) {
-  telegram_send_message({ text: `⚠️ ${coin} vs BTC, skip` })
-  return SKIP
-}
+if (!btc.aligned) return SKIP
 
+// Funding check (penalty)
 const funding = await check_funding_edge(coin, direction)
 confidence += funding.confidence_penalty
 
+// Time filter
 const time = check_trading_conditions()
 let size_mult = time.multiplier
 
+// V3 safety checks
 const balance = await hyperliquid_get_balance({})
 const dd = await check_drawdown_circuit_breaker(chat_id, balance.accountValue)
 if (dd.halt) return STOP
@@ -130,26 +123,24 @@ if (confidence < 7) return SKIP
 
 ```javascript
 hyperliquid_get_positions({})
-
-// Max 4 positions, max 2 long/2 short
 if (positions.length >= 4) return SKIP
 
-const leverage = Math.min(Math.max(maxLeverage, 3), 5)
+const params = select_params('balanced', confidence)
+const leverage = Math.min(Math.max(maxLeverage, params.leverage[0]), params.leverage[1])
 
 hyperliquid_update_leverage({ coin, leverage, is_cross: true })
 
-let margin = accountValue * 0.10 * size_mult
-const sl_pct = 4, tp_pct = 8
 const price = await hyperliquid_get_price(coin)
+const margin = accountValue * params.position_pct * size_mult
 const size = calculate_size(margin, leverage, price)
 
-const sl_price = price * (is_buy ? (1 - sl_pct/100) : (1 + sl_pct/100))
-const tp_price = price * (is_buy ? (1 + tp_pct/100) : (1 - tp_pct/100))
+const sl_price = price * (is_buy ? (1 - params.sl_pct/100) : (1 + params.sl_pct/100))
+const tp_price = price * (is_buy ? (1 + params.tp_pct/100) : (1 - params.tp_pct/100))
 
-const result = await place_protected_order(coin, is_buy, size, 'balanced')
+const result = await place_bracket_order(coin, is_buy, size, price, tp_price, sl_price, 'balanced')
 
-hyperliquid_place_order({ coin, order_type: "take_profit", trigger_price: tp_price, reduce_only: true })
-hyperliquid_place_order({ coin, order_type: "stop_loss", trigger_price: sl_price, reduce_only: true })
+const rr = (params.tp_pct / params.sl_pct).toFixed(1)
+notify('balanced', 'entry', { dir: is_buy ? 'LONG' : 'SHORT', coin, price, lev: leverage, rr })
 ```
 
 ### Step 5: Subscribe
@@ -160,9 +151,7 @@ hyperliquid_subscribe_webhook({
   coins: [coin],
   events: ["fills", "orders"],
   position_alerts: [
-    { coin, condition: "pnl_pct_gt", value: 3 },
     { coin, condition: "pnl_pct_gt", value: 5 },
-    { coin, condition: "pnl_pct_gt", value: 8 },
     { coin, condition: "pnl_pct_gt", value: 10 },
     { coin, condition: "pnl_pct_lt", value: -2 }
   ]
@@ -182,10 +171,11 @@ session.subscription_id = subscription_id
 await splox_kv_set({ key: `${chat_id}_session`, value: JSON.stringify(session) })
 ```
 
-### Step 6: Schedule
+### Step 6: Schedule (Adaptive)
 
 ```javascript
-schedule({ subscription_id, delay: 7200, message: "2hr scan" })
+const interval = await get_scan_interval('balanced')
+schedule({ subscription_id, delay: interval, message: "balanced scan" })
 ```
 
 ## Event Handling
@@ -199,6 +189,14 @@ hyperliquid_get_positions({})
 const dd = await check_drawdown_circuit_breaker(chat_id, accountValue)
 if (dd.halt) { await cleanup_session(chat_id); return STOP }
 
+const session = JSON.parse(await splox_kv_get({ key: `${chat_id}_session` }))
+const progress = calculate_progress(accountValue, session.starting_balance, session.target_balance)
+if (accountValue >= session.target_balance) {
+  notify('balanced', 'target', { start: session.starting_balance, final: accountValue, ret: progress.progress_pct })
+  await cleanup_session(chat_id)
+  return STOP
+}
+
 const daily = await check_daily_loss_limit(chat_id, 'balanced')
 
 const loss = await check_consecutive_losses(chat_id)
@@ -208,44 +206,51 @@ if (loss.stop_24h) {
 }
 
 for (const pos of positions) {
-  await manage_dynamic_stop(pos, 'balanced')
+  const trail = await check_trailing_stop(pos, 'balanced')
+  if (trail.moved) {
+    notify('balanced', 'trail', { coin: pos.coin, locked: trail.locked.toFixed(1) })
+  }
   await manage_partial_takes(chat_id, pos, 8)
 }
 
-const stats = JSON.parse(await splox_kv_get({ key: `${chat_id}_stats` }) || '{}')
-telegram_send_message({
-  text: `📊 ${positions.length}/4 | ${positions.map(p => `${p.coin}: ${p.pnl_pct}%`).join(' | ')} | ${stats.wins}W/${stats.losses}L`
-})
-
-if (accountValue >= target) { await cleanup_session(chat_id); return STOP }
+notify('balanced', 'scan', { pos: positions.length, max: 4, bal: accountValue.toFixed(2), progress: progress.progress_pct })
 ```
 
 ### On Trade Close
 
 ```javascript
+const session = JSON.parse(await splox_kv_get({ key: `${chat_id}_session` }))
+const progress = calculate_progress(accountValue, session.starting_balance, session.target_balance)
+
 await record_trade(chat_id, { coin, direction, entry_price, exit_price, pnl_pct, pnl_usd, exit_reason })
 await clear_partials(chat_id, coin)
 
-if (exit_reason === 'trailing_stop' && pnl_pct > 0) {
-  const re = await check_reentry_opportunity(closed)
-  if (re.reentry) // re-enter
+if (pnl_pct > 0) {
+  notify('balanced', 'win', { coin, pnl: pnl_usd.toFixed(2), pct: pnl_pct.toFixed(1), bal: accountValue.toFixed(2), progress: progress.progress_pct })
+} else {
+  notify('balanced', 'loss', { coin, pnl: Math.abs(pnl_usd).toFixed(2), pct: pnl_pct.toFixed(1), bal: accountValue.toFixed(2) })
+}
+
+if (accountValue >= session.target_balance) {
+  notify('balanced', 'target', { start: session.starting_balance, final: accountValue, ret: progress.progress_pct })
+  await cleanup_session(chat_id)
+  return STOP
 }
 ```
 
 ### On Position Alert
 
 ```
-+3%  → breakeven
-+5%  → +2% locked
-+8%  → +5% locked
-+10% → trail 3%
++5%  → check trailing
++10% → activate trailing (3% distance)
 -2%  → watch only
 ```
 
 ### LAST STEP (NEVER SKIP)
 
 ```javascript
-schedule({ subscription_id, delay: 7200, message: "2hr scan" })
+const interval = await get_scan_interval('balanced')
+schedule({ subscription_id, delay: interval, message: "balanced scan" })
 ```
 
 ## Cleanup
