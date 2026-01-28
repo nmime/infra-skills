@@ -1,0 +1,305 @@
+{
+  "format_version": "1.0",
+  "company_name": "splox",
+  "workflow_name": "Autonomous trader V2",
+  "workflow_description": "",
+  "version_number": 1,
+  "metadata": {
+    "maximum_trigger_calls": 100
+  },
+  "nodes": [
+    {
+      "node_index": 0,
+      "node_type": "start",
+      "label": "Start",
+      "pos_x": 50,
+      "pos_y": 705,
+      "data": {}
+    },
+    {
+      "node_index": 1,
+      "node_type": "agent",
+      "label": "Subagent",
+      "pos_x": 1490,
+      "pos_y": 181,
+      "data": {
+        "additional_llm_config": {
+          "builtin_tools": [],
+          "cache_control": "5m",
+          "max_completion_tokens": 48000,
+          "modalities": [
+            "text",
+            "image"
+          ],
+          "thinking_tokens": 4096
+        },
+        "chat_streaming_mode": "none",
+        "context_memory": {
+          "context_memory_id": "{{ start.chat_id }}",
+          "enable_summarization": true,
+          "limit_type": "tokens",
+          "max_tokens": 70000,
+          "min_messages_to_keep": 70,
+          "summarize_prompt": "Summarize the following conversation briefly, focusing on key points and decisions made. ",
+          "trim_strategy": "drop_oldest",
+          "user_message_content": "{{ start.text }}"
+        },
+        "enable_streaming": true,
+        "max_iterations": 100,
+        "on_tool_error": "continue",
+        "system_prompt": "You are a helpful assistant that can use tools to accomplish tasks. Always check current time.",
+        "text_llm_model": "claude-sonnet-4-5-20250929",
+        "text_llm_provider_slug": "anthropic",
+        "tool_choice": "auto",
+        "voice_llm_model": "gemini-2.5-flash-native-audio-preview-12-2025",
+        "voice_llm_provider_slug": "gemini"
+      }
+    },
+    {
+      "node_index": 2,
+      "node_type": "tool",
+      "label": "Tool Router",
+      "pos_x": 1970,
+      "pos_y": 312,
+      "data": {
+        "allowed_tools": [
+          "hyperliquid_get_historical_orders",
+          "hyperliquid_get_all_prices"
+        ],
+        "mcp_server_url": "system:tool_router"
+      }
+    },
+    {
+      "node_index": 3,
+      "node_type": "tool",
+      "label": "Skills",
+      "pos_x": 1010,
+      "pos_y": 443,
+      "data": {
+        "mcp_server_url": "system:skills"
+      }
+    },
+    {
+      "node_index": 4,
+      "node_type": "tool",
+      "label": "Tool",
+      "pos_x": 1010,
+      "pos_y": 705,
+      "data": {
+        "allowed_tools": [
+          "SPLOX_EXECUTE_TOOL",
+          "SPLOX_GET_TOOL_SCHEMA",
+          "SPLOX_LIST_USER_CONNECTIONS",
+          "SPLOX_SEARCH_TOOLS"
+        ],
+        "mcp_server_url": "system:tool_router"
+      }
+    },
+    {
+      "node_index": 5,
+      "node_type": "tool",
+      "label": "Search",
+      "pos_x": 1970,
+      "pos_y": 574,
+      "data": {
+        "mcp_server_url": "https://mcp.splox.io/serper/mcp"
+      }
+    },
+    {
+      "node_index": 6,
+      "node_type": "agent",
+      "label": "Gambler",
+      "pos_x": 530,
+      "pos_y": 705,
+      "data": {
+        "additional_llm_config": {
+          "builtin_tools": [],
+          "cache_control": "5m",
+          "enable_1m_context": true,
+          "max_completion_tokens": 48000,
+          "modalities": [
+            "text",
+            "image"
+          ],
+          "thinking_tokens": 4096
+        },
+        "additional_realtime_config": {
+          "enable_affective_dialog": true,
+          "proactive_audio": false,
+          "voice": "puck"
+        },
+        "chat_streaming_mode": "session",
+        "context_memory": {
+          "context_memory_id": "{{ start.chat_id }}",
+          "enable_summarization": true,
+          "limit_type": "tokens",
+          "max_tokens": 3000000,
+          "min_messages_to_keep": 70,
+          "summarize_prompt": "Summarize the following conversation briefly, focusing on key points and decisions made. ",
+          "trim_strategy": "drop_oldest",
+          "user_message_content": "{{ start | tojson }}"
+        },
+        "enable_streaming": true,
+        "max_iterations": 100000,
+        "node_name": "Agent",
+        "on_tool_error": "continue",
+        "realtime_enabled": true,
+        "skills": [
+          "@volatile/trading-agent"
+        ],
+        "system_prompt": "You are an autonomous crypto trading agent. Execute with discipline.\n\nPROTOCOL:\n1. Check time → Verify Hyperliquid connection → Load trading mode\n2. Follow mode parameters STRICTLY (see skill)\n3. Execute trades decisively, react to events immediately\n4. Send Telegram notification after every action (see skill for format)\n\nThe skill contains all trading logic, risk management rules, and notification templates. Load it and follow precisely.\n\nYou are not a chatbot. You are a trader.",
+        "text_llm_model": "claude-opus-4-5-20251101",
+        "text_llm_provider_slug": "anthropic",
+        "tool_choice": "auto",
+        "voice_llm_model": "gemini-2.5-flash-native-audio-preview-12-2025",
+        "voice_llm_provider_slug": "gemini"
+      }
+    },
+    {
+      "node_index": 7,
+      "node_type": "tool",
+      "label": "Current Time",
+      "pos_x": 1970,
+      "pos_y": 50,
+      "data": {
+        "allowed_tools": [
+          "splox_get_current_time"
+        ],
+        "mcp_server_url": "system:splox"
+      }
+    },
+    {
+      "node_index": 8,
+      "node_type": "tool",
+      "label": "Telegram Notification",
+      "pos_x": 1007.8980891719746,
+      "pos_y": 967,
+      "data": {
+        "allowed_tools": null,
+        "mcp_server_url": "https://mcp.splox.io/telegram/mcp"
+      }
+    },
+    {
+      "node_index": 9,
+      "node_type": "agent",
+      "label": "Market DeepResearch",
+      "pos_x": 1010,
+      "pos_y": 181,
+      "data": {
+        "additional_llm_config": {
+          "builtin_tools": [],
+          "cache_control": "5m",
+          "enable_1m_context": true,
+          "max_completion_tokens": 48000,
+          "modalities": [
+            "text",
+            "image"
+          ],
+          "thinking_tokens": 4096
+        },
+        "chat_streaming_mode": "session",
+        "context_memory": {
+          "context_memory_id": "{{ start.chat_id }}",
+          "enable_summarization": true,
+          "limit_type": "tokens",
+          "max_tokens": 70000,
+          "min_messages_to_keep": 70,
+          "summarize_prompt": "Summarize the following conversation briefly, focusing on key points and decisions made. ",
+          "trim_strategy": "drop_oldest",
+          "user_message_content": "{{ start.text }}"
+        },
+        "enable_streaming": true,
+        "max_iterations": 100,
+        "node_name": "Agent",
+        "on_tool_error": "continue",
+        "system_prompt": "**Role:** Market research analyst conducting parallel, deep investigation.\n\n### Phase 1: Scope\n- **Core question:** What exactly are we solving?\n- **Boundaries:** In/out of scope\n- **Success criteria:** What does a good answer look like?\n- **Research angles:** Define 3-5 distinct threads\n\n### Phase 2: Parallel Research\nSpawn research threads, each with:\n- **Unique `context_memory_id`** (e.g., `competitor_analysis_001`, `market_trends_001`)\n- **Distinct boundaries** — no overlap between threads\n- **Specific success criteria** per thread\n\n```\nAlways include random id as a prefix.\n\nThread 1: context_memory_id=\"random_id_competitors_{session}\"\nThread 2: context_memory_id=\"random_id_customers_{session}\"\nThread 3: context_memory_id=\"random_id_trends_{session}\"\nThread 4: context_memory_id=\"random_id_regulations_{session}\"\n```\n\nEach thread: search → validate → store findings with confidence level.\n\n### Phase 3: Synthesis\n- Merge findings across all `context_memory_id` threads\n- Cross-reference, resolve contradictions\n- Rank by relevance + confidence\n\n### Output\n```\n## Summary\n## Key Findings (sourced, confidence-tagged)\n## Gaps / Next Steps\n```",
+        "text_llm_model": "claude-sonnet-4-5-20250929",
+        "text_llm_provider_slug": "anthropic",
+        "tool_choice": "auto",
+        "voice_llm_model": "gemini-2.5-flash-native-audio-preview-12-2025",
+        "voice_llm_provider_slug": "gemini"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source_index": 0,
+      "target_index": 6,
+      "edge_type": "parallel",
+      "source_handle": "output",
+      "data": {}
+    },
+    {
+      "source_index": 1,
+      "target_index": 7,
+      "edge_type": "tool",
+      "source_handle": "tools",
+      "data": {}
+    },
+    {
+      "source_index": 6,
+      "target_index": 9,
+      "edge_type": "tool",
+      "source_handle": "tools",
+      "data": {
+        "child_tool_description": "Delegate research tasks to Market Deepresearch agent",
+        "execution_mode": "sync"
+      }
+    },
+    {
+      "source_index": 9,
+      "target_index": 1,
+      "edge_type": "tool",
+      "source_handle": "tools",
+      "data": {}
+    },
+    {
+      "source_index": 6,
+      "target_index": 3,
+      "edge_type": "tool",
+      "source_handle": "tools",
+      "data": {}
+    },
+    {
+      "source_index": 1,
+      "target_index": 2,
+      "edge_type": "tool",
+      "source_handle": "tools",
+      "data": {}
+    },
+    {
+      "source_index": 1,
+      "target_index": 5,
+      "edge_type": "tool",
+      "source_handle": "tools",
+      "data": {}
+    },
+    {
+      "source_index": 6,
+      "target_index": 4,
+      "edge_type": "tool",
+      "source_handle": "tools",
+      "data": {}
+    },
+    {
+      "source_index": 6,
+      "target_index": 8,
+      "edge_type": "tool",
+      "source_handle": "tools",
+      "data": {}
+    }
+  ],
+  "variable_mappings": [
+    {
+      "node_index": 6,
+      "target_node_index": 0,
+      "mapping_name": "start"
+    },
+    {
+      "node_index": 8,
+      "target_node_index": 0,
+      "mapping_name": "start"
+    }
+  ],
+  "exported_at": "2026-01-28T09:57:52.698618299Z"
+}

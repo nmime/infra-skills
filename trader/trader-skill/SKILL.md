@@ -119,14 +119,14 @@ $[withdrawable]
 After showing account status, ask user to select a trading mode:
 
 ```
-Which trading mode do you want to run?
+Which trading mode?
 
-1. Conservative - Low risk, protect capital (1-2x leverage, 5% position size)
-2. Balanced - Moderate risk, steady growth (2-5x leverage, 10% position size)
-3. Aggressive - High risk, high reward (5-10x leverage, 50% position size)
-4. Degen - Maximum risk, moon or bust (10-50x leverage, 80% position size)
+1. Conservative - 1-2x leverage, +20%/year target
+2. Balanced - 3-7x leverage, +25-50% target
+3. Aggressive - 15-25x leverage, +50-100% target
+4. Degen - 25-50x leverage, +100-300% target
 
-Choose a number (1-4):
+Choose (1-4):
 ```
 
 **Step 5: Load Mode Configuration**
@@ -142,31 +142,73 @@ Use the parameters from the mode file for all trading decisions.
 
 ## Trading Modes
 
-Four modes with professional risk management:
-
-1. **Conservative** - Capital preservation, 1-2x leverage, 20% annual target
-2. **Balanced** - Trend following, 3-7x leverage, 25-50% target
-3. **Aggressive** - Momentum + MTF confirmation, 8-12x leverage, 50-100% target
-4. **Degen** - High-frequency momentum, 15-25x leverage, 100-300% target
-
-### Professional Features (All Modes)
-
-- **Half-Kelly Position Sizing** - Size based on confidence and edge
-- **ATR-Based Dynamic Stops** - Volatility-adjusted SL/TP (not fixed %)
-- **Minimum 2:1 Risk/Reward** - Every trade has positive expectancy
-- **Tiered Drawdown Protection** - Reduce risk as losses mount
-- **Consecutive Loss Cooldown** - Prevent revenge trading
-- **Funding Rate Edge** - Fade extreme funding for contrarian plays
-- **Volatility Regime Detection** - Adapt to market conditions
+| Mode | Leverage | Target | Daily Loss Limit |
+|------|----------|--------|------------------|
+| 1. Conservative | 1-2x | +20%/year | -5% |
+| 2. Balanced | 3-7x | +25-50% | -8% |
+| 3. Aggressive | 15-25x | +50-100% | -12% |
+| 4. Degen | 25-50x | +100-300% | -20% |
 
 Each mode has specific parameters in `references/mode-[name].md`.
 
+## Risk Management
+
+| Rule | Implementation |
+|------|----------------|
+| Position Size | Half-Kelly: `BASE_RISK × (confidence/10) × volatility_factor` |
+| Stop Loss | 1.5-2× ATR, max 60% of liquidation distance |
+| Take Profit | ≥2× stop loss (2:1 R:R minimum) |
+| Consecutive Losses | 3 → cooldown 30-45min, reduce size 50% |
+| Drawdown | Tiered response → reduce size → hard stop |
+
+## Funding Rate Edge
+
+| Condition | Action |
+|-----------|--------|
+| Funding > +0.05%/hr | Favor SHORT (longs paying) |
+| Funding < -0.05%/hr | Favor LONG (shorts paying) |
+| Trade against edge | Confidence -2 |
+
+## Volatility Adaptation
+
+| ATR vs Average | Action |
+|----------------|--------|
+| > 1.5× (high vol) | Size ×0.6, reduce leverage |
+| < 0.7× (low vol) | Size ×1.1, normal leverage |
+
+## Telegram Notifications
+
+**Send to chat_id: `nmime`** after every trade action.
+
+### Message Templates
+
+```
+// Entry
+🟢 LONG {COIN} @ ${ENTRY} | {LEV}x | Risk: ${RISK}
+
+// Exit - Win
+✅ {COIN} +${PNL} (+{PCT}%) | {W}W/{L}L
+
+// Exit - Loss
+❌ {COIN} -${PNL} | Streak: {N}
+
+// Alerts
+⚠️ Down {DD}% → reducing size
+🧊 3 losses → cooldown
+🎉 TARGET! +{RETURN}%
+
+// Daily
+📊 {PNL_PCT}% | {W}W/{L}L | ${BAL}
+```
+
+### Output Rule
+- **Chat**: Full details + reasoning
+- **Telegram**: Brief summary only
+
 ## Important Notes
 
-- Always check connection first before any action
-- Verify account balance before trading
-- Load and follow the selected mode's parameters strictly
+- Check connection before any action
+- Load mode parameters and follow strictly
 - Never exceed calculated risk per trade
-- ATR stops adapt to volatility automatically
-- Track win rate for Kelly sizing optimization
-- Respect daily drawdown limits - live to trade another day
+- Respect daily drawdown limits
+- **Send Telegram notification after every trade**
