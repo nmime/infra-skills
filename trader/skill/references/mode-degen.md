@@ -1,6 +1,6 @@
 # Degen Mode
 
-Momentum + News | Any Coin | 15-25x | 10min scans
+Momentum + News | Any Coin | Max Leverage | 2hr scans
 
 ## Config
 
@@ -10,23 +10,20 @@ target: +100% to +300% based on account size
   $100-1000: +175%
   >$1000: +125%
 
-leverage: 15-25x (max 25x)
-position: 25% of account
-sl: -10%
-tp: +20% (min 2x SL)
-max_positions: 3
-scan: 10min
+leverage: MAX available (up to 50x)
+position: 30-50% of account (confidence-based)
+sl: -10% to -15%
+tp: +15% to +25%
+trailing: 15% distance after +20% profit
+max_positions: 2
+scan: 2hr base (30min volatile, 4hr quiet)
 daily_limit: -15%
 confidence_min: 5
-```
 
-## Dynamic Stops
-
-```
-+5%  → breakeven (-0.3%)
-+10% → +5% locked
-+15% → +10% locked
-+20% → trail 5% below max
+risk_profile: YOLO
+  skip_btc_check: true
+  skip_time_filter: true
+  skip_funding_check: true
 ```
 
 ## Setup
@@ -43,7 +40,7 @@ else if (starting >= 100) target_pct = 175
 
 const target = starting * (1 + target_pct / 100)
 
-telegram_send_message({ text: `🎰 Degen | $${starting} → $${target} (+${target_pct}%) | 10min` })
+notify('degen', 'start', { bal: starting, target, pct: target_pct })
 ```
 
 ### Step 1: Create Webhook
@@ -62,7 +59,7 @@ market_deepresearch({
 2. Breaking news/catalysts
 3. Extreme funding rates
 
-Need: coin, direction, why, confidence (1-10). Shitcoins ok.`
+Need: coin, direction, why, confidence (1-10). Shitcoins welcome. YOLO plays ok.`
 })
 ```
 
@@ -74,23 +71,19 @@ hyperliquid_get_all_prices({ coins: [coin] })
 hyperliquid_get_funding_rates({ coin })
 ```
 
-### Step 3b: Pre-Trade Checks
+### Step 3b: Pre-Trade Checks (MINIMAL - Degen skips most)
 
 ```javascript
+// Only check: coin exists + basic liquidity
 const liq = await check_liquidity(coin, margin, 'degen')
 if (!liq.ok) return SKIP
 
-const btc = await check_btc_alignment(coin, direction)
-confidence += btc.confidence_penalty
-
-const funding = await check_funding_edge(coin, direction)
-confidence += funding.confidence_penalty
-
-const time = check_trading_conditions()
-let size_mult = time.multiplier
+// NO BTC check (skip_btc_check: true)
+// NO time filter (skip_time_filter: true)
+// NO funding check (skip_funding_check: true)
 
 if (confidence < 5) {
-  telegram_send_message({ text: `⚠️ ${coin} conf ${confidence}/10, skip` })
+  notify('degen', 'scan', { pos: positions.length, max: 2, bal: accountValue })
   return SKIP
 }
 ```
@@ -98,23 +91,27 @@ if (confidence < 5) {
 ### Step 4: Execute
 
 ```javascript
-const leverage = Math.min(maxLeverage, 25)
+hyperliquid_get_positions({})
+if (positions.length >= 2) return SKIP
+
+// Get params based on confidence
+const params = select_params('degen', confidence)
+const meta = await hyperliquid_get_meta({ coin })
+const leverage = params.leverage === 'MAX' ? meta.maxLeverage : Math.min(meta.maxLeverage, params.leverage)
 
 hyperliquid_update_leverage({ coin, leverage, is_cross: true })
 
-let margin = accountValue * 0.25 * size_mult
-const sl_pct = 10, tp_pct = 20
 const price = await hyperliquid_get_price(coin)
+const margin = accountValue * params.position_pct
 const size = calculate_size(margin, leverage, price)
 
-const sl_price = price * (is_buy ? (1 - sl_pct/100) : (1 + sl_pct/100))
-const tp_price = price * (is_buy ? (1 + tp_pct/100) : (1 - tp_pct/100))
+const sl_price = price * (is_buy ? (1 - params.sl_pct/100) : (1 + params.sl_pct/100))
+const tp_price = price * (is_buy ? (1 + params.tp_pct/100) : (1 - params.tp_pct/100))
 
-const result = await place_protected_order(coin, is_buy, size, 'degen')
-if (result.fill_pct < 0.7) // retry or skip
+// Atomic bracket order
+const result = await place_bracket_order(coin, is_buy, size, price, tp_price, sl_price, 'degen')
 
-hyperliquid_place_order({ coin, order_type: "take_profit", trigger_price: tp_price, reduce_only: true })
-hyperliquid_place_order({ coin, order_type: "stop_loss", trigger_price: sl_price, reduce_only: true })
+notify('degen', 'entry', { dir: is_buy ? 'LONG' : 'SHORT', coin, price, lev: leverage, tp: tp_price, sl: sl_price })
 ```
 
 ### Step 5: Subscribe
@@ -128,9 +125,7 @@ hyperliquid_subscribe_webhook({
   coins,
   events: ["fills", "orders"],
   position_alerts: coins.flatMap(c => [
-    { coin: c, condition: "pnl_pct_gt", value: 5 },
     { coin: c, condition: "pnl_pct_gt", value: 10 },
-    { coin: c, condition: "pnl_pct_gt", value: 15 },
     { coin: c, condition: "pnl_pct_gt", value: 20 },
     { coin: c, condition: "pnl_pct_lt", value: -5 }
   ])
@@ -146,10 +141,11 @@ const { subscription_id } = await event_subscribe({
 })
 ```
 
-### Step 6: Schedule
+### Step 6: Schedule (Adaptive)
 
 ```javascript
-schedule({ subscription_id, delay: 600, message: "10min scan" })
+const interval = await get_scan_interval('degen')
+schedule({ subscription_id, delay: interval, message: "degen scan" })
 ```
 
 ## Event Handling
@@ -160,43 +156,58 @@ schedule({ subscription_id, delay: 600, message: "10min scan" })
 hyperliquid_get_balance({})
 hyperliquid_get_positions({})
 
-for (const pos of positions) {
-  await manage_dynamic_stop(pos, 'degen')
+// Check target first
+const progress = calculate_progress(accountValue, starting, target)
+if (accountValue >= target) {
+  notify('degen', 'target', { start: starting, final: accountValue, ret: progress.progress_pct })
+  cleanup()
+  return STOP
 }
 
-telegram_send_message({
-  text: `📊 ${positions.map(p => `${p.coin}: ${p.roe}%`).join(' | ')} | $${balance}`
-})
+// Manage trailing stops
+for (const pos of positions) {
+  const trail = await check_trailing_stop(pos, 'degen')
+  if (trail.moved) {
+    notify('degen', 'trail', { coin: pos.coin, pnl: (pos.unrealizedPnl/pos.marginUsed*100).toFixed(1), locked: trail.locked.toFixed(1) })
+  }
+}
 
-if (accountValue >= target) { cleanup(); return STOP }
+notify('degen', 'scan', { pos: positions.length, max: 2, bal: accountValue.toFixed(2) })
 ```
 
 ### On Trade Close
 
 ```javascript
-if (exit_reason === 'trailing_stop' && pnl_pct > 0) {
-  const re = await check_reentry_opportunity(closed)
-  if (re.reentry) // re-enter
+const progress = calculate_progress(accountValue, starting, target)
+
+if (pnl_pct > 0) {
+  notify('degen', 'win', { coin, pnl: pnl_usd.toFixed(2), pct: pnl_pct.toFixed(1), bal: accountValue.toFixed(2), progress: progress.progress_pct })
+} else {
+  notify('degen', 'loss', { coin, pnl: Math.abs(pnl_usd).toFixed(2), pct: pnl_pct.toFixed(1), bal: accountValue.toFixed(2), progress: progress.progress_pct })
 }
 
-if (positions.length < 3) // research new trade
+if (accountValue >= target) {
+  notify('degen', 'target', { start: starting, final: accountValue, ret: progress.progress_pct })
+  cleanup()
+  return STOP
+}
+
+if (positions.length < 2) // research new trade
 ```
 
 ### On Position Alert
 
 ```
-+5%  → move stop to breakeven
-+10% → lock +5%
-+15% → lock +10%
-+20% → trail 5%
++10% → check trailing stop
++20% → activate trailing (15% distance)
 -5%  → watch, never move stop down
 ```
 
 ### LAST STEP (NEVER SKIP)
 
 ```javascript
-schedule({ subscription_id, delay: 600, message: "10min scan" })
-// If fails, recreate subscription
+const interval = await get_scan_interval('degen')
+schedule({ subscription_id, delay: interval, message: "degen scan" })
 ```
 
 ## Cleanup
@@ -206,5 +217,7 @@ for (const pos of positions) hyperliquid_market_close({ coin: pos.coin })
 cancel_schedule({ schedule_id })
 event_unsubscribe({ subscription_id })
 hyperliquid_unsubscribe_webhook({})
-telegram_send_message({ text: `Session ended: $${starting} → $${final} (${pnl_pct}%)` })
+
+const progress = calculate_progress(accountValue, starting, target)
+notify('degen', 'target', { start: starting, final: accountValue, ret: ((accountValue-starting)/starting*100).toFixed(1) })
 ```

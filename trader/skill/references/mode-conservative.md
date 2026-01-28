@@ -9,29 +9,26 @@ target: +20% annually
   Q1: +5%, Q2: +10%, Q3: +15%, Q4: +20%
 
 leverage: 1-2x
-position: 6% of account
-sl: -2.5%
-tp: +5% (min 2x SL)
+position: 5-8% of account (confidence-based)
+sl: -2% to -3%
+tp: +5% to +8%
+trailing: 2% distance after +6% profit
 max_positions: 6
 max_margin: 60% (keep 40% cash)
-scan: 3 days
+scan: 3d base (1d volatile, 5d quiet)
 daily_limit: -5%
 confidence_min: 8
-btc_alignment: REQUIRED
-weekend_trading: DISABLED
+
+risk_profile: Capital Preservation
+  btc_alignment: REQUIRED (hard skip)
+  funding_check: STRICT (hard skip if against)
+  weekend_trading: false
+  allowed_coins: BTC, ETH, SOL, BNB, XRP, ADA, AVAX, DOGE, LINK, DOT
 ```
 
 ## Allowed Coins
 
 BTC, ETH, SOL, BNB, XRP, ADA, AVAX, DOGE, LINK, DOT
-
-## Dynamic Stops
-
-```
-+2.5% → breakeven (-0.1%)
-+4%   → +2% locked
-+6%   → trail 2% below max
-```
 
 ## Setup
 
@@ -42,7 +39,7 @@ hyperliquid_get_balance({})
 const starting = accountValue
 const target = starting * 1.20
 
-telegram_send_message({ text: `🛡️ Conservative | $${starting} → $${target} (+20%/year) | 3d` })
+notify('conservative', 'start', { bal: starting, target, pct: 20 })
 ```
 
 ### Step 1: Create Webhook
@@ -91,26 +88,17 @@ hyperliquid_get_funding_rates({ coin })
 const liq = await check_liquidity(coin, margin, 'conservative')
 if (!liq.ok) return SKIP
 
-// BTC alignment REQUIRED - no exceptions
+// BTC alignment REQUIRED
 const btc = await check_btc_alignment(coin, direction)
-if (!btc.aligned) {
-  telegram_send_message({ text: `⚠️ ${coin} vs BTC, conservative requires alignment, skip` })
-  return SKIP
-}
+if (!btc.aligned) return SKIP
 
-// Check funding - skip if extreme against us (conservative is strict)
+// Funding STRICT (hard skip if against)
 const funding = await check_funding_edge(coin, direction)
-if (funding.confidence_penalty < 0) {
-  telegram_send_message({ text: `⚠️ ${coin} funding against ${direction}, conservative skips` })
-  return SKIP
-}
+if (funding.confidence_penalty < 0) return SKIP
 
 // No weekend trading
 const time = check_trading_conditions()
-if (time.is_weekend) {
-  telegram_send_message({ text: `⚠️ Weekend, conservative pauses` })
-  return SKIP
-}
+if (time.is_weekend) return SKIP
 let size_mult = time.multiplier
 
 if (confidence < 8) return SKIP
@@ -121,30 +109,25 @@ if (confidence < 8) return SKIP
 ```javascript
 hyperliquid_get_positions({})
 
-// Max 6 positions, max 60% margin
 const margin_used_pct = totalMarginUsed / accountValue
-if (margin_used_pct > 0.60) {
-  telegram_send_message({ text: `Portfolio at 60%, keeping cash` })
-  return SKIP
-}
+if (margin_used_pct > 0.60) return SKIP
 if (positions.length >= 6) return SKIP
 
+const params = select_params('conservative', confidence)
 const leverage = 2
 
 hyperliquid_update_leverage({ coin, leverage, is_cross: true })
 
-let margin = accountValue * 0.06 * size_mult
-const sl_pct = 2.5, tp_pct = 5
 const price = await hyperliquid_get_price(coin)
+const margin = accountValue * params.position_pct * size_mult
 const size = calculate_size(margin, leverage, price)
 
-const sl_price = price * (is_buy ? (1 - sl_pct/100) : (1 + sl_pct/100))
-const tp_price = price * (is_buy ? (1 + tp_pct/100) : (1 - tp_pct/100))
+const sl_price = price * (is_buy ? (1 - params.sl_pct/100) : (1 + params.sl_pct/100))
+const tp_price = price * (is_buy ? (1 + params.tp_pct/100) : (1 - params.tp_pct/100))
 
-const result = await place_protected_order(coin, is_buy, size, 'conservative')
+const result = await place_bracket_order(coin, is_buy, size, price, tp_price, sl_price, 'conservative')
 
-hyperliquid_place_order({ coin, order_type: "take_profit", trigger_price: tp_price, reduce_only: true })
-hyperliquid_place_order({ coin, order_type: "stop_loss", trigger_price: sl_price, reduce_only: true })
+notify('conservative', 'entry', { dir: is_buy ? 'LONG' : 'SHORT', coin, price, lev: leverage })
 ```
 
 ### Step 5: Subscribe
@@ -155,8 +138,7 @@ hyperliquid_subscribe_webhook({
   coins: [coin],
   events: ["fills", "orders"],
   position_alerts: [
-    { coin, condition: "pnl_pct_gt", value: 2.5 },
-    { coin, condition: "pnl_pct_gt", value: 4 },
+    { coin, condition: "pnl_pct_gt", value: 3 },
     { coin, condition: "pnl_pct_gt", value: 6 },
     { coin, condition: "pnl_pct_lt", value: -1.5 }
   ]
@@ -164,7 +146,7 @@ hyperliquid_subscribe_webhook({
 
 const { subscription_id } = await event_subscribe({
   webhook_id,
-  timeout: 2592000, // 30 days
+  timeout: 2592000,
   triggers: [
     { name: "trade_events", filter: "payload.type == 'fill' || payload.type == 'order'", debounce: 10 },
     { name: "position_alerts", filter: "payload.type == 'position_alert'", debounce: 10 }
@@ -172,10 +154,11 @@ const { subscription_id } = await event_subscribe({
 })
 ```
 
-### Step 6: Schedule
+### Step 6: Schedule (Adaptive)
 
 ```javascript
-schedule({ subscription_id, delay: 259200, message: "3-day scan" }) // 72 hours
+const interval = await get_scan_interval('conservative')
+schedule({ subscription_id, delay: interval, message: "3-day scan" })
 ```
 
 ## Event Handling
@@ -187,36 +170,39 @@ hyperliquid_get_balance({})
 hyperliquid_get_positions({})
 
 for (const pos of positions) {
-  await manage_dynamic_stop(pos, 'conservative')
+  const trail = await check_trailing_stop(pos, 'conservative')
+  if (trail.moved) {
+    notify('conservative', 'trail', { coin: pos.coin, locked: trail.locked.toFixed(1) })
+  }
 }
 
-telegram_send_message({
-  text: `📊 3-Day | ${positions.length}/6 | Cash ${(100 - totalMarginUsed/accountValue*100).toFixed(0)}%`
-})
+const cash_pct = (100 - totalMarginUsed/accountValue*100).toFixed(0)
+notify('conservative', 'scan', { pos: positions.length, max: 6, cash: cash_pct })
 ```
 
 ### On Trade Close
 
 ```javascript
-if (exit_reason === 'trailing_stop' && pnl_pct > 0) {
-  const re = await check_reentry_opportunity(closed)
-  if (re.reentry) // re-enter
+if (pnl_pct > 0) {
+  notify('conservative', 'win', { coin, pnl: pnl_usd.toFixed(2), pct: pnl_pct.toFixed(1) })
+} else {
+  notify('conservative', 'loss', { coin, pnl: Math.abs(pnl_usd).toFixed(2), pct: pnl_pct.toFixed(1) })
 }
 ```
 
 ### On Position Alert
 
 ```
-+2.5% → breakeven
-+4%   → +2% locked
-+6%   → trail 2%
--1.5% → review, consider early exit
++3%  → check trailing
++6%  → activate trailing (2% distance)
+-1.5% → review
 ```
 
 ### LAST STEP (NEVER SKIP)
 
 ```javascript
-schedule({ subscription_id, delay: 259200, message: "3-day scan" })
+const interval = await get_scan_interval('conservative')
+schedule({ subscription_id, delay: interval, message: "3-day scan" })
 ```
 
 ## Cleanup
@@ -226,5 +212,6 @@ for (const pos of positions) hyperliquid_market_close({ coin: pos.coin })
 cancel_schedule({ schedule_id })
 event_unsubscribe({ subscription_id })
 hyperliquid_unsubscribe_webhook({})
-telegram_send_message({ text: `Session ended: $${starting} → $${final} (${pnl_pct}%)` })
+
+notify('conservative', 'target', { start: starting, final: accountValue, ret: ((accountValue-starting)/starting*100).toFixed(1) })
 ```
