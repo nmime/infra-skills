@@ -178,7 +178,7 @@ Each mode has specific parameters in `references/mode-[name].md`.
 
 ## Telegram Notifications
 
-**Send to chat_id: `305544740`** after every trade action.
+**IMPORTANT:** Always use FIXED Telegram chat_id: `305544740` (not session chat_id)
 
 ### Message Templates
 
