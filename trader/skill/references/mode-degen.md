@@ -116,6 +116,32 @@ hyperliquid_get_all_prices({ coins: ["COIN"] })
 hyperliquid_get_funding_rates({ coin: "COIN" })
 ```
 
+### Step 3b: Pre-Trade Checks
+
+```javascript
+// 1. Check liquidity & spread (see SKILL.md)
+const liquidity = await check_liquidity(COIN, MARGIN, 'degen')
+if (!liquidity.ok) {
+  SKIP  // Already logged to Telegram
+}
+
+// 2. Check BTC alignment (see SKILL.md)
+const btc_check = await check_btc_alignment(COIN, DIRECTION)
+CONFIDENCE += btc_check.confidence_penalty  // -2 if misaligned
+
+// 3. Check time conditions
+const time_check = check_trading_conditions()
+POSITION_SIZE_MULTIPLIER *= time_check.multiplier  // Reduce on weekends/night
+
+// 4. Final confidence check after adjustments
+if (CONFIDENCE < 5) {
+  telegram_send_message({
+    text: `⚠️ ${COIN} confidence too low after checks: ${CONFIDENCE}/10. Skipping.`
+  })
+  SKIP
+}
+```
+
 ### Step 4: Execute Trade
 
 ```javascript
@@ -128,8 +154,9 @@ hyperliquid_update_leverage({
   is_cross: true
 })
 
-// Calculate position size (20-30% of account)
-const MARGIN = accountValue * 0.25  // 25% default
+// Calculate position size (20-30% of account) with multipliers
+let MARGIN = accountValue * 0.25  // 25% default
+MARGIN *= POSITION_SIZE_MULTIPLIER  // Apply drawdown/time adjustments
 
 // Calculate TP/SL with enforced 2:1 minimum R:R
 const SL_PCT = 10  // -10%
@@ -138,14 +165,33 @@ const TP_PCT = Math.max(SL_PCT * 2, 20)  // Minimum 2× SL = +20%
 const SL_PRICE = ENTRY_PRICE * (is_buy ? (1 - SL_PCT/100) : (1 + SL_PCT/100))
 const TP_PRICE = ENTRY_PRICE * (is_buy ? (1 + TP_PCT/100) : (1 - TP_PCT/100))
 
-// Place bracket order (entry + TP + SL)
-hyperliquid_place_bracket_order({
+// Use slippage-protected order (see SKILL.md place_protected_order)
+const entry_result = await place_protected_order(COIN, is_buy, POSITION_SIZE, 'degen')
+
+if (!entry_result.filled || entry_result.fill_pct < 0.7) {
+  telegram_send_message({
+    text: `⚠️ Order only ${(entry_result.fill_pct * 100).toFixed(0)}% filled. Retrying...`
+  })
+  // Retry with wider slippage or skip
+}
+
+// Place TP/SL orders after entry confirmed
+hyperliquid_place_order({
   coin: "COIN",
-  is_buy: true,  // or false for SHORT
-  size: POSITION_SIZE,
-  entry_price: ENTRY_PRICE,
-  take_profit_price: TP_PRICE,  // +20-30% (2× SL minimum)
-  stop_loss_price: SL_PRICE     // -8-12%
+  is_buy: !is_buy,  // Opposite direction
+  size: FILLED_SIZE,
+  order_type: "take_profit",
+  trigger_price: TP_PRICE,
+  reduce_only: true
+})
+
+hyperliquid_place_order({
+  coin: "COIN",
+  is_buy: !is_buy,
+  size: FILLED_SIZE,
+  order_type: "stop_loss",
+  trigger_price: SL_PRICE,
+  reduce_only: true
 })
 ```
 
@@ -214,6 +260,7 @@ if (drawdown_check.halt) {
 // 3. Manage dynamic stops for ALL positions
 for (const position of positions) {
   await manage_dynamic_stop(position, 'degen')
+  await manage_partial_takes(position, 'degen')  // Check partial profit levels
 }
 
 // 4. Report ALL positions to Telegram
@@ -235,10 +282,25 @@ if (accountValue >= TARGET_BALANCE) {
 ### On Trade Event (fill/order)
 
 1. Report what happened (TP/SL hit?)
-2. If closed by trailing stop with profit:
+2. **Record trade for performance tracking** (see SKILL.md `record_trade`)
+3. If closed by trailing stop with profit:
    - Check re-entry opportunity (see SKILL.md `check_reentry_opportunity`)
    - If trend continues → re-enter
-3. If position closed → research new trade (Steps 2-4)
+4. If position closed → research new trade (Steps 2-4)
+
+```javascript
+// After any position close
+await record_trade({
+  coin: closed_position.coin,
+  direction: closed_position.direction,
+  entry_price: closed_position.entryPx,
+  exit_price: closed_position.exitPx,
+  pnl_pct: closed_position.pnl_pct,
+  pnl_usd: closed_position.pnl_usd,
+  duration_min: (Date.now() - closed_position.openTime) / 60000,
+  exit_reason: closed_position.exit_reason  // 'tp', 'sl', 'trailing', 'partial'
+})
+```
 
 ### On Position Alert
 

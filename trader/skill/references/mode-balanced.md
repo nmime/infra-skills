@@ -145,6 +145,28 @@ if (positions.length >= 4) {
   SKIP
 }
 
+### Step 3b: Pre-Trade Checks
+
+```javascript
+// 1. Check liquidity & spread
+const liquidity = await check_liquidity(COIN, MARGIN, 'balanced')
+if (!liquidity.ok) SKIP
+
+// 2. Check BTC alignment (required for balanced)
+const btc_check = await check_btc_alignment(COIN, DIRECTION)
+if (!btc_check.aligned) {
+  telegram_send_message({ text: `⚠️ ${COIN} ${DIRECTION} against BTC trend. Skipping.` })
+  SKIP  // Balanced mode: strict BTC alignment
+}
+
+// 3. Check time conditions
+const time_check = check_trading_conditions()
+POSITION_SIZE_MULTIPLIER *= time_check.multiplier
+
+// 4. Final confidence check
+if (CONFIDENCE < 7) SKIP
+```
+
 // Set leverage (3-5x)
 LEVERAGE = Math.min(maxLeverage, 5)
 LEVERAGE = Math.max(LEVERAGE, 3)
@@ -155,25 +177,23 @@ hyperliquid_update_leverage({
   is_cross: true
 })
 
-// Calculate position size (8-12% of account)
-MARGIN = accountValue * 0.10  // 10% default
+// Calculate position size with multipliers
+let MARGIN = accountValue * 0.10
+MARGIN *= POSITION_SIZE_MULTIPLIER
 
 // Calculate TP/SL with enforced 2:1 minimum R:R
-const SL_PCT = 4  // -4%
-const TP_PCT = Math.max(SL_PCT * 2, 8)  // Minimum 2× SL = +8%
+const SL_PCT = 4
+const TP_PCT = Math.max(SL_PCT * 2, 8)
 
 const SL_PRICE = ENTRY_PRICE * (is_buy ? (1 - SL_PCT/100) : (1 + SL_PCT/100))
 const TP_PRICE = ENTRY_PRICE * (is_buy ? (1 + TP_PCT/100) : (1 - TP_PCT/100))
 
-// Place bracket order with tight stops
-hyperliquid_place_bracket_order({
-  coin: "COIN",
-  is_buy: true,  // or false for SHORT
-  size: POSITION_SIZE,
-  entry_price: ENTRY_PRICE,
-  take_profit_price: TP_PRICE,  // +8-12% (2× SL minimum)
-  stop_loss_price: SL_PRICE     // -3-5%
-})
+// Use slippage-protected order
+const entry_result = await place_protected_order(COIN, is_buy, POSITION_SIZE, 'balanced')
+
+// Place TP/SL after entry
+hyperliquid_place_order({ coin: "COIN", order_type: "take_profit", trigger_price: TP_PRICE, reduce_only: true })
+hyperliquid_place_order({ coin: "COIN", order_type: "stop_loss", trigger_price: SL_PRICE, reduce_only: true })
 ```
 
 ### Step 5: Setup Monitoring
@@ -233,9 +253,10 @@ if (drawdown_check.halt) {
   STOP
 }
 
-// 3. Manage dynamic stops for ALL positions
+// 3. Manage dynamic stops and partial takes
 for (const position of positions) {
   await manage_dynamic_stop(position, 'balanced')
+  await manage_partial_takes(position, 'balanced')
 }
 
 // 4. Report ALL positions to Telegram
@@ -256,8 +277,9 @@ if (accountValue >= TARGET_BALANCE) {
 ### On Trade Event (fill/order)
 
 1. Report what happened (TP/SL hit?)
-2. If closed by trailing stop with profit → check re-entry opportunity
-3. If position closed → slot opens for new trade
+2. **Record trade for performance tracking** (see SKILL.md `record_trade`)
+3. If closed by trailing stop with profit → check re-entry opportunity
+4. If position closed → slot opens for new trade
 
 ### On Position Alert
 
