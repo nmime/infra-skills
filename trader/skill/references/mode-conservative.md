@@ -264,19 +264,12 @@ schedule({
 hyperliquid_get_balance({})
 hyperliquid_get_positions({})
 
-// 2. CHECK DRAWDOWN CIRCUIT BREAKER
-const drawdown_check = await check_drawdown_circuit_breaker()
-if (drawdown_check.halt) {
-  STOP
-}
-
-// 3. Manage dynamic stops and partial takes
+// 2. Manage dynamic stops for ALL positions
 for (const position of positions) {
   await manage_dynamic_stop(position, 'conservative')
-  await manage_partial_takes(position, 5)  // tp_pct = 5% for conservative
 }
 
-// 4. Report to Telegram
+// 3. Report to Telegram
 telegram_send_message({
   chat_id: TELEGRAM_CHAT_ID,
   text: `📊 3-Day Report:
@@ -291,9 +284,8 @@ Progress: ${progress}%`
 ### On Trade Event (fill/order)
 
 1. Report what happened (TP/SL hit?)
-2. **Record trade for performance tracking** (see SKILL.md `record_trade`)
-3. If closed by trailing stop with profit → check re-entry opportunity
-4. If position closed → slot opens (don't rush to fill)
+2. If closed by trailing stop with profit → check re-entry opportunity
+3. If position closed → slot opens (don't rush to fill)
 
 ### On Position Alert
 
@@ -401,12 +393,10 @@ Example ($1,000 account):
 
 | Control | Value |
 |---------|-------|
-| Daily Loss Limit | -5% → Stop for day |
-| 3 Consecutive Losses | Cooldown 4-6 hours, size -50% |
-| 5 Losses in Day | Stop for 24 hours |
-| Drawdown -15% | Reduce size 50%, pause 2 hours |
-| Drawdown -20% | **HALT ALL TRADING** |
+| Daily Loss Limit | -5% → Stop opening new positions |
+| Stop-Loss | Always required on every position |
 | Min R:R | 2:1 (enforced) |
+| Max Positions | 6 concurrent |
 
 ## Notifications
 

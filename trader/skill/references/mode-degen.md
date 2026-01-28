@@ -250,29 +250,21 @@ schedule({
 hyperliquid_get_balance({})
 hyperliquid_get_positions({})
 
-// 2. CHECK DRAWDOWN CIRCUIT BREAKER (before anything else!)
-const drawdown_check = await check_drawdown_circuit_breaker()
-if (drawdown_check.halt) {
-  // Trading halted, cleanup already done
-  STOP
-}
-
-// 3. Manage dynamic stops for ALL positions
+// 2. Manage dynamic stops for ALL positions
 for (const position of positions) {
   await manage_dynamic_stop(position, 'degen')
-  await manage_partial_takes(position, 20)  // tp_pct = 20% for degen
 }
 
-// 4. Report ALL positions to Telegram
+// 3. Report ALL positions to Telegram
 telegram_send_message({
   chat_id: TELEGRAM_CHAT_ID,
   text: `📊 Positions:
 ${positions.map(p => `• ${p.coin} ${p.direction}: ${p.roe}% ROE`).join('\n')}
-Balance: $${balance} (${sessionChange}%)
+Balance: $${balance}
 Progress: ${progress}% to target`
 })
 
-// 5. Check target
+// 4. Check target
 if (accountValue >= TARGET_BALANCE) {
   cleanup()
   STOP
@@ -282,25 +274,10 @@ if (accountValue >= TARGET_BALANCE) {
 ### On Trade Event (fill/order)
 
 1. Report what happened (TP/SL hit?)
-2. **Record trade for performance tracking** (see SKILL.md `record_trade`)
-3. If closed by trailing stop with profit:
+2. If closed by trailing stop with profit:
    - Check re-entry opportunity (see SKILL.md `check_reentry_opportunity`)
    - If trend continues → re-enter
-4. If position closed → research new trade (Steps 2-4)
-
-```javascript
-// After any position close
-await record_trade({
-  coin: closed_position.coin,
-  direction: closed_position.direction,
-  entry_price: closed_position.entryPx,
-  exit_price: closed_position.exitPx,
-  pnl_pct: closed_position.pnl_pct,
-  pnl_usd: closed_position.pnl_usd,
-  duration_min: (Date.now() - closed_position.openTime) / 60000,
-  exit_reason: closed_position.exit_reason  // 'tp', 'sl', 'trailing', 'partial'
-})
-```
+3. If position closed → research new trade (Steps 2-4)
 
 ### On Position Alert
 
@@ -380,12 +357,10 @@ Example ($100 account, 3 positions):
 
 | Control | Value |
 |---------|-------|
-| Daily Loss Limit | -15% → Stop for day |
-| 3 Consecutive Losses | Cooldown 4-6 hours, size -50% |
-| 5 Losses in Day | Stop for 24 hours |
-| Drawdown -15% | Reduce size 50%, pause 2 hours |
-| Drawdown -20% | **HALT ALL TRADING** |
+| Daily Loss Limit | -15% → Stop opening new positions |
+| Stop-Loss | Always required on every position |
 | Min R:R | 2:1 (enforced) |
+| Max Positions | 3 concurrent |
 
 ## Notifications
 

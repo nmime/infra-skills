@@ -196,63 +196,10 @@ const MODE_CONFIG = {
 
 | Rule | Implementation |
 |------|----------------|
-| Position Size | `account × position_pct × POSITION_SIZE_MULTIPLIER` |
+| Position Size | `account × position_pct` |
 | Stop Loss | Use `sl_pct` from MODE_CONFIG |
 | Take Profit | Use `tp_pct` from MODE_CONFIG (always ≥2× SL) |
-| Consecutive Losses | 3 → cooldown **4-6 hours**, reduce size 50% |
-| Daily Losses | 5 losses in one day → **stop for 24 hours** |
-| Drawdown | Tiered response (see below) |
-
-### Drawdown Circuit Breaker (HARD LIMITS)
-
-| Drawdown from Peak | Action |
-|--------------------|--------|
-| -10% | ⚠️ Warning: reduce position sizes by 30% |
-| -15% | 🔶 Caution: reduce position sizes by 50%, pause new entries for 2 hours |
-| -20% | 🛑 **HARD STOP**: Close all positions, halt trading, notify user |
-
-```javascript
-// Check on EVERY wake-up, before any other action
-async function check_drawdown_circuit_breaker() {
-  const balance = await hyperliquid_get_balance({})
-  const current = balance.accountValue
-
-  // Track peak balance (store in session)
-  PEAK_BALANCE = Math.max(PEAK_BALANCE || STARTING_BALANCE, current)
-
-  const drawdown_pct = ((PEAK_BALANCE - current) / PEAK_BALANCE) * 100
-
-  if (drawdown_pct >= 20) {
-    // HARD STOP
-    await telegram_send_message({
-      chat_id: TELEGRAM_CHAT_ID,
-      text: `🛑 *DRAWDOWN LIMIT HIT (-${drawdown_pct.toFixed(1)}%)*
-Peak: $${PEAK_BALANCE.toFixed(2)}
-Current: $${current.toFixed(2)}
-Loss: -$${(PEAK_BALANCE - current).toFixed(2)}
-
-Trading HALTED. Manual review required.
-All positions being closed...`
-    })
-    await cleanup()
-    return { halt: true, reason: 'drawdown_limit' }
-  }
-
-  if (drawdown_pct >= 15) {
-    POSITION_SIZE_MULTIPLIER = 0.5
-    PAUSE_NEW_ENTRIES_UNTIL = Date.now() + (2 * 60 * 60 * 1000)
-    return { halt: false, warning: 'caution', multiplier: 0.5 }
-  }
-
-  if (drawdown_pct >= 10) {
-    POSITION_SIZE_MULTIPLIER = 0.7
-    return { halt: false, warning: 'warning', multiplier: 0.7 }
-  }
-
-  POSITION_SIZE_MULTIPLIER = 1.0
-  return { halt: false }
-}
-```
+| Daily Loss Limit | Mode-specific (see mode files) |
 
 ### Dynamic Stop-Loss Management
 
@@ -478,62 +425,6 @@ Skipping trade.`
 }
 ```
 
-## Partial Profit Taking (Scale Out)
-
-**Don't exit all at once — take profits in stages:**
-
-| Level | Action | Why |
-|-------|--------|-----|
-| 50% to TP | Close 30% | Lock some profit early |
-| 75% to TP | Close 30% | Reduce risk further |
-| 100% TP | Close remaining 40% | Full target |
-
-```javascript
-// Call with: manage_partial_takes(position, MODE_CONFIG[mode].tp_pct)
-async function manage_partial_takes(position, tp_pct) {
-  const pnl_pct = position.unrealizedPnl / position.marginUsed * 100
-
-  // Calculate progress to TP
-  const progress_to_tp = pnl_pct / tp_pct
-
-  // Track which partials already taken (store in session)
-  const partials_key = `${position.coin}_partials`
-  const partials_taken = SESSION.partials_taken[partials_key] || { p50: false, p75: false }
-
-  // 50% to TP → close 30%
-  if (progress_to_tp >= 0.5 && !partials_taken.p50) {
-    const close_size = position.size * 0.3
-    await hyperliquid_market_close({ coin: position.coin, size: close_size })
-
-    partials_taken.p50 = true
-    SESSION.partials_taken[partials_key] = partials_taken
-
-    await telegram_send_message({
-      chat_id: TELEGRAM_CHAT_ID,
-      text: `💰 *${position.coin}* Partial take #1
-Closed 30% at +${pnl_pct.toFixed(1)}%
-Remaining: 70% riding to TP`
-    })
-  }
-
-  // 75% to TP → close another 30%
-  if (progress_to_tp >= 0.75 && !partials_taken.p75) {
-    const close_size = position.size * 0.3
-    await hyperliquid_market_close({ coin: position.coin, size: close_size })
-
-    partials_taken.p75 = true
-    SESSION.partials_taken[partials_key] = partials_taken
-
-    await telegram_send_message({
-      chat_id: TELEGRAM_CHAT_ID,
-      text: `💰 *${position.coin}* Partial take #2
-Closed 30% at +${pnl_pct.toFixed(1)}%
-Remaining: 40% riding to TP`
-    })
-  }
-}
-```
-
 ## Time-Based Filters
 
 **Reduce exposure during low-liquidity periods:**
@@ -623,82 +514,6 @@ Confidence -2 applied`
 }
 ```
 
-## Performance Tracking
-
-**Track all trades and analyze performance:**
-
-```javascript
-// Initialize at session start
-SESSION.trade_history = []
-SESSION.session_stats = {
-  total_trades: 0,
-  wins: 0,
-  losses: 0,
-  total_pnl: 0,
-  largest_win: 0,
-  largest_loss: 0,
-  current_streak: 0  // positive = wins, negative = losses
-}
-
-// Call after every closed trade
-async function record_trade(trade) {
-  const stats = SESSION.session_stats
-
-  // Record trade
-  SESSION.trade_history.push({
-    coin: trade.coin,
-    direction: trade.direction,
-    entry: trade.entry_price,
-    exit: trade.exit_price,
-    pnl_pct: trade.pnl_pct,
-    pnl_usd: trade.pnl_usd,
-    duration_min: trade.duration_min,
-    exit_reason: trade.exit_reason,  // 'tp', 'sl', 'trailing', 'manual'
-    timestamp: Date.now()
-  })
-
-  // Update stats
-  stats.total_trades++
-  stats.total_pnl += trade.pnl_pct
-
-  if (trade.pnl_pct > 0) {
-    stats.wins++
-    stats.largest_win = Math.max(stats.largest_win, trade.pnl_pct)
-    stats.current_streak = stats.current_streak > 0 ? stats.current_streak + 1 : 1
-  } else {
-    stats.losses++
-    stats.largest_loss = Math.min(stats.largest_loss, trade.pnl_pct)
-    stats.current_streak = stats.current_streak < 0 ? stats.current_streak - 1 : -1
-  }
-
-  // Every 5 trades: performance report
-  if (stats.total_trades % 5 === 0) {
-    const win_rate = (stats.wins / stats.total_trades * 100).toFixed(0)
-    const avg_trade = (stats.total_pnl / stats.total_trades).toFixed(2)
-
-    await telegram_send_message({
-      chat_id: TELEGRAM_CHAT_ID,
-      text: `📊 *Performance Update* (${stats.total_trades} trades)
-Win rate: ${win_rate}%
-Total P&L: ${stats.total_pnl > 0 ? '+' : ''}${stats.total_pnl.toFixed(1)}%
-Avg trade: ${avg_trade}%
-Best: +${stats.largest_win.toFixed(1)}% | Worst: ${stats.largest_loss.toFixed(1)}%
-Streak: ${stats.current_streak > 0 ? '+' + stats.current_streak + ' wins' : stats.current_streak + ' losses'}`
-    })
-
-    // Warning if win rate drops below 35%
-    if (stats.total_trades >= 10 && stats.wins / stats.total_trades < 0.35) {
-      await telegram_send_message({
-        chat_id: TELEGRAM_CHAT_ID,
-        text: `⚠️ *Low win rate warning*
-Win rate: ${win_rate}% (below 35%)
-Consider pausing to review strategy.`
-      })
-    }
-  }
-}
-```
-
 ## Telegram Notifications
 
 **MUST send to Telegram** after every trade action using:
@@ -783,35 +598,11 @@ Price continued: ${CURRENT}
 Re-entering {DIRECTION}...
 ```
 
-**Drawdown Warning:**
-```
-⚠️ *Drawdown Alert* -{DRAWDOWN_PCT}%
-Peak: ${PEAK} → Current: ${CURRENT}
-Action: {REDUCED_SIZE / PAUSED / HALTED}
-```
-
-**Partial Profit Take:**
-```
-💰 *{COIN}* Partial take #{N}
-Closed {PCT}% at +{PNL_PCT}%
-Remaining: {REMAINING}% riding to TP
-```
-
 **Liquidity/Spread Skip:**
 ```
 ⚠️ *{COIN}* {REASON}
 {DETAILS}
 Skipping trade.
-```
-
-**Performance Update:**
-```
-📊 *Performance Update* ({N} trades)
-Win rate: {WIN_RATE}%
-Total P&L: {TOTAL_PNL}%
-Avg trade: {AVG}%
-Best: +{BEST}% | Worst: {WORST}%
-Streak: {STREAK}
 ```
 
 **BTC Misalignment:**
@@ -833,17 +624,7 @@ Size multiplier: ×{MULT}
 🎉 *TARGET REACHED!*
 ${STARTING} → ${FINAL}
 Return: +{RETURN}%
-Trades: {TOTAL} ({WINS}W/{LOSSES}L)
 Duration: {DURATION}
-```
-
-**Daily Summary (optional):**
-```
-📈 *Daily Report*
-Balance: ${BALANCE} ({DAY_CHANGE}%)
-Open: {POSITIONS} positions
-Today: {TRADES} trades ({WINS}W/{LOSSES}L)
-Progress: {PROGRESS}% to target
 ```
 
 **{SCAN_INTERVAL}** values:
@@ -861,7 +642,7 @@ Progress: {PROGRESS}% to target
 | Trade closed | Result, P&L, new balance |
 | Scan (no trade) | Why skipped (unclear trend, low confidence, etc.) |
 | Position alert | Current P&L, any action taken |
-| Target reached | Full summary with stats |
+| Target reached | Final balance, return percentage |
 | Error/Issue | What happened, what agent will do |
 
 ### Reason Examples
@@ -890,12 +671,10 @@ You have freedom to decide:
 Guidelines are guardrails, not handcuffs. Use your research and judgment.
 
 **Hard limits (non-negotiable):**
-- Daily loss limit → hard stop
-- 3 consecutive losses → cooldown **4-6 hours** (not minutes!)
-- 5 losses in one day → **stop for 24 hours**
+- Daily loss limit → stop opening new positions
 - Never risk more than mode's base risk per trade
-- **-20% drawdown from peak → HALT ALL TRADING**
 - **Minimum R:R = 2:1** (TP must be ≥2× SL distance)
+- Always use stop-loss orders (never trade without protection)
 
 ## Important Notes
 
