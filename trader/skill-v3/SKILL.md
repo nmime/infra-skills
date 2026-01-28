@@ -400,6 +400,73 @@ function check_trading_conditions() {
 }
 ```
 
+## Margin to Size
+
+```javascript
+function calculate_size(margin, leverage, price) {
+  const notional = margin * leverage
+  return notional / price
+}
+```
+
+## Stop Management Helpers
+
+```javascript
+async function get_current_stop(coin) {
+  const orders = await hyperliquid_get_open_orders({})
+  const sl = orders.find(o => o.coin === coin && o.orderType === 'stop_loss')
+  return sl ? sl.triggerPx : null
+}
+
+async function move_stop_loss(coin, new_price) {
+  const orders = await hyperliquid_get_open_orders({})
+  const sl = orders.find(o => o.coin === coin && o.orderType === 'stop_loss')
+
+  if (sl) {
+    await hyperliquid_cancel_order({ coin, oid: sl.oid })
+  }
+
+  const position = (await hyperliquid_get_positions({})).find(p => p.coin === coin)
+  const is_buy = position.szi < 0
+
+  await hyperliquid_place_order({
+    coin,
+    is_buy,
+    size: Math.abs(position.szi),
+    order_type: "stop_loss",
+    trigger_price: new_price,
+    reduce_only: true
+  })
+}
+```
+
+## Funding Rate Edge
+
+```javascript
+async function check_funding_edge(coin, direction) {
+  const funding = await hyperliquid_get_funding_rates({ coin })
+  const rate = funding.fundingRate
+
+  const EXTREME = 0.0005  // 0.05%/hr
+
+  let edge = 'NEUTRAL', penalty = 0
+
+  if (rate > EXTREME) {
+    edge = 'SHORT_FAVORED'
+    if (direction === 'LONG') penalty = -1
+  } else if (rate < -EXTREME) {
+    edge = 'LONG_FAVORED'
+    if (direction === 'SHORT') penalty = -1
+  }
+
+  if (penalty !== 0) {
+    telegram_send_message({ text: `⚠️ ${coin} funding ${(rate*100).toFixed(3)}%/hr against ${direction}, conf -1` })
+  }
+
+  return { edge, funding_rate: rate, confidence_penalty: penalty }
+}
+```
+
 ## Cleanup
 
 ```javascript

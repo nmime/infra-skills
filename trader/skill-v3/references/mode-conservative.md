@@ -116,6 +116,13 @@ if (!btc.aligned) {
   return SKIP
 }
 
+// Check funding - skip if extreme against us (conservative is strict)
+const funding = await check_funding_edge(coin, direction)
+if (funding.confidence_penalty < 0) {
+  telegram_send_message({ text: `⚠️ ${coin} funding against ${direction}, conservative skips` })
+  return SKIP
+}
+
 // No weekend trading
 const time = check_trading_conditions()
 if (time.is_weekend) {
@@ -158,9 +165,11 @@ hyperliquid_update_leverage({ coin, leverage, is_cross: true })
 
 let margin = accountValue * 0.06 * size_mult
 const sl_pct = 2.5, tp_pct = 5
+const price = await hyperliquid_get_price(coin)
+const size = calculate_size(margin, leverage, price)
 
-const sl_price = entry * (is_buy ? (1 - sl_pct/100) : (1 + sl_pct/100))
-const tp_price = entry * (is_buy ? (1 + tp_pct/100) : (1 - tp_pct/100))
+const sl_price = price * (is_buy ? (1 - sl_pct/100) : (1 + sl_pct/100))
+const tp_price = price * (is_buy ? (1 + tp_pct/100) : (1 - tp_pct/100))
 
 const result = await place_protected_order(coin, is_buy, size, 'conservative')
 
@@ -233,6 +242,8 @@ const session = JSON.parse(await splox_kv_get({ key: `${chat_id}_session` }) || 
 telegram_send_message({
   text: `📊 3-Day | ${positions.length}/6 | Cash ${(100 - totalMarginUsed/accountValue*100).toFixed(0)}% | ${stats.wins}W/${stats.losses}L`
 })
+
+if (accountValue >= session.target_balance) { await cleanup_session(chat_id); return STOP }
 
 // Quarterly check
 await check_quarterly_progress(chat_id, accountValue)

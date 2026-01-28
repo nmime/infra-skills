@@ -98,6 +98,9 @@ if (!btc.aligned) {
   return SKIP
 }
 
+const funding = await check_funding_edge(coin, direction)
+confidence += funding.confidence_penalty
+
 const time = check_trading_conditions()
 let size_mult = time.multiplier
 
@@ -118,9 +121,11 @@ hyperliquid_update_leverage({ coin, leverage, is_cross: true })
 
 let margin = accountValue * 0.10 * size_mult
 const sl_pct = 4, tp_pct = 8
+const price = await hyperliquid_get_price(coin)
+const size = calculate_size(margin, leverage, price)
 
-const sl_price = entry * (is_buy ? (1 - sl_pct/100) : (1 + sl_pct/100))
-const tp_price = entry * (is_buy ? (1 + tp_pct/100) : (1 - tp_pct/100))
+const sl_price = price * (is_buy ? (1 - sl_pct/100) : (1 + sl_pct/100))
+const tp_price = price * (is_buy ? (1 + tp_pct/100) : (1 - tp_pct/100))
 
 const result = await place_protected_order(coin, is_buy, size, 'balanced')
 
