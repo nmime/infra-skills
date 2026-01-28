@@ -30,13 +30,22 @@ Agent trades until $175 hit.
 | Parameter | Value |
 |-----------|-------|
 | Target | +100% to +300% (agent chooses) |
-| Leverage | Max available (up to 50x) |
-| Position Size | 30-50% of account |
-| Stop Loss | -10% to -15% |
-| Take Profit | +15% to +25% |
-| Trailing Stop | 15% after +20% profit |
+| Leverage | 15-25x (max 25x) |
+| Position Size | 20-30% of account |
+| Stop Loss | -8% to -12% |
+| Take Profit | +20% to +30% (min 2× SL) |
 | Max Positions | 3 |
 | Scan Interval | 10 minutes |
+| Daily Loss Limit | -15% |
+
+## Dynamic Stop-Loss Levels
+
+| Position P&L | Move Stop To | Locked Profit |
+|--------------|--------------|---------------|
+| +5% | Breakeven (-0.3%) | Risk-free |
+| +10% | +5% | +5% guaranteed |
+| +15% | +10% | +10% guaranteed |
+| +20%+ | Trail 5% below max | Ride the trend |
 
 ## Setup Flow
 
@@ -110,12 +119,24 @@ hyperliquid_get_funding_rates({ coin: "COIN" })
 ### Step 4: Execute Trade
 
 ```javascript
-// Set leverage (use max available, up to 50x)
+// Set leverage (15-25x, cap at 25x)
+const LEVERAGE = Math.min(maxLeverage, 25)
+
 hyperliquid_update_leverage({
   coin: "COIN",
-  leverage: MAX_LEVERAGE,
+  leverage: LEVERAGE,
   is_cross: true
 })
+
+// Calculate position size (20-30% of account)
+const MARGIN = accountValue * 0.25  // 25% default
+
+// Calculate TP/SL with enforced 2:1 minimum R:R
+const SL_PCT = 10  // -10%
+const TP_PCT = Math.max(SL_PCT * 2, 20)  // Minimum 2× SL = +20%
+
+const SL_PRICE = ENTRY_PRICE * (is_buy ? (1 - SL_PCT/100) : (1 + SL_PCT/100))
+const TP_PRICE = ENTRY_PRICE * (is_buy ? (1 + TP_PCT/100) : (1 - TP_PCT/100))
 
 // Place bracket order (entry + TP + SL)
 hyperliquid_place_bracket_order({
@@ -123,8 +144,8 @@ hyperliquid_place_bracket_order({
   is_buy: true,  // or false for SHORT
   size: POSITION_SIZE,
   entry_price: ENTRY_PRICE,
-  take_profit_price: TP_PRICE,  // +15-25%
-  stop_loss_price: SL_PRICE     // -10-15%
+  take_profit_price: TP_PRICE,  // +20-30% (2× SL minimum)
+  stop_loss_price: SL_PRICE     // -8-12%
 })
 ```
 
@@ -135,14 +156,17 @@ hyperliquid_place_bracket_order({
 hyperliquid_get_positions({})
 ALL_COINS = positions.map(p => p.coin)
 
-// Subscribe all coins to webhook
+// Subscribe all coins to webhook with dynamic stop levels
 hyperliquid_subscribe_webhook({
   webhook_url: WEBHOOK_URL,
   coins: ALL_COINS,
   events: ["fills", "orders"],
   position_alerts: ALL_COINS.map(coin => [
-    { coin: coin, condition: "pnl_pct_gt", value: 10 },
-    { coin: coin, condition: "pnl_pct_lt", value: -5 }
+    { coin: coin, condition: "pnl_pct_gt", value: 5 },   // Breakeven trigger
+    { coin: coin, condition: "pnl_pct_gt", value: 10 },  // +5% lock trigger
+    { coin: coin, condition: "pnl_pct_gt", value: 15 },  // +10% lock trigger
+    { coin: coin, condition: "pnl_pct_gt", value: 20 },  // Trailing start
+    { coin: coin, condition: "pnl_pct_lt", value: -5 }   // Danger zone
   ]).flat()
 })
 
@@ -180,7 +204,19 @@ schedule({
 hyperliquid_get_balance({})
 hyperliquid_get_positions({})
 
-// 2. Report ALL positions to Telegram
+// 2. CHECK DRAWDOWN CIRCUIT BREAKER (before anything else!)
+const drawdown_check = await check_drawdown_circuit_breaker()
+if (drawdown_check.halt) {
+  // Trading halted, cleanup already done
+  STOP
+}
+
+// 3. Manage dynamic stops for ALL positions
+for (const position of positions) {
+  await manage_dynamic_stop(position, 'degen')
+}
+
+// 4. Report ALL positions to Telegram
 telegram_send_message({
   chat_id: TELEGRAM_CHAT_ID,
   text: `📊 Positions:
@@ -189,7 +225,7 @@ Balance: $${balance} (${sessionChange}%)
 Progress: ${progress}% to target`
 })
 
-// 3. Check target
+// 5. Check target
 if (accountValue >= TARGET_BALANCE) {
   cleanup()
   STOP
@@ -199,12 +235,22 @@ if (accountValue >= TARGET_BALANCE) {
 ### On Trade Event (fill/order)
 
 1. Report what happened (TP/SL hit?)
-2. If position closed → research new trade (Steps 2-4)
+2. If closed by trailing stop with profit:
+   - Check re-entry opportunity (see SKILL.md `check_reentry_opportunity`)
+   - If trend continues → re-enter
+3. If position closed → research new trade (Steps 2-4)
 
 ### On Position Alert
 
-1. +20% → Consider trailing stop
-2. -5% → Watch closely
+Dynamic stops are managed automatically, but on specific alerts:
+
+| Alert | Action |
+|-------|--------|
+| +5% | Move stop to breakeven |
+| +10% | Lock +5% profit |
+| +15% | Lock +10% profit |
+| +20%+ | Trail 5% behind price |
+| -5% | Watch closely, DO NOT move stop down |
 
 ### On Schedule (10min scan)
 
@@ -255,16 +301,29 @@ hyperliquid_get_balance({})
 
 ```
 Account Balance: $X
-Position Size: 30-50% of $X
-Max Leverage: Use coin's max (check hyperliquid_get_meta)
+Position Size: 20-30% of $X (25% default)
+Max Leverage: 15-25x (capped at 25x)
 Notional Value: Position Size × Leverage
 
 Example ($100 account, 3 positions):
-- Per position: $30 margin (30%)
+- Per position: $25 margin (25%)
 - Leverage: 20x
-- Notional per position: $600
-- Total exposure: $1,800 (3 positions)
+- Notional per position: $500
+- Total exposure: $1,500 (3 positions)
+- Max loss per position (10% SL): $2.50
+- Max loss all positions: $7.50 (7.5% of account)
 ```
+
+## Risk Controls
+
+| Control | Value |
+|---------|-------|
+| Daily Loss Limit | -15% → Stop for day |
+| 3 Consecutive Losses | Cooldown 4-6 hours, size -50% |
+| 5 Losses in Day | Stop for 24 hours |
+| Drawdown -15% | Reduce size 50%, pause 2 hours |
+| Drawdown -20% | **HALT ALL TRADING** |
+| Min R:R | 2:1 (enforced) |
 
 ## Notifications
 

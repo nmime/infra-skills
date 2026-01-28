@@ -143,9 +143,9 @@ Each mode file contains a step-by-step setup flow. Execute every step in order �
 | Mode | Leverage | Target | Daily Loss Limit | Scan Interval |
 |------|----------|--------|------------------|---------------|
 | 1. Conservative | 1-2x | +20%/year | -5% | 3 days |
-| 2. Balanced | 3-7x | +25-50% | -8% | 2 hours |
-| 3. Aggressive | 15-25x | +50-100% | -12% | 20 min |
-| 4. Degen | 25-50x | +100-300% | -20% | 10 min |
+| 2. Balanced | 3-5x | +25-50% | -8% | 2 hours |
+| 3. Aggressive | 5-15x | +50-100% | -10% | 20 min |
+| 4. Degen | 15-25x | +100-300% | -15% | 10 min |
 
 Each mode has specific parameters in `references/mode-[name].md`.
 
@@ -153,11 +153,184 @@ Each mode has specific parameters in `references/mode-[name].md`.
 
 | Rule | Implementation |
 |------|----------------|
-| Position Size | Half-Kelly: `BASE_RISK × (confidence/10) × volatility_factor` |
+| Position Size | `BASE_RISK × (confidence/10) × volatility_factor` |
 | Stop Loss | 1.5-2× ATR, max 60% of liquidation distance |
-| Take Profit | ≥2× stop loss (2:1 R:R minimum) |
-| Consecutive Losses | 3 → cooldown 30-45min, reduce size 50% |
-| Drawdown | Tiered response → reduce size → hard stop |
+| Take Profit | ≥2× stop loss (2:1 R:R minimum, **enforced**) |
+| Consecutive Losses | 3 → cooldown **4-6 hours**, reduce size 50% |
+| Daily Losses | 5 losses in one day → **stop for 24 hours** |
+| Drawdown | Tiered response (see below) |
+
+### Drawdown Circuit Breaker (HARD LIMITS)
+
+| Drawdown from Peak | Action |
+|--------------------|--------|
+| -10% | ⚠️ Warning: reduce position sizes by 30% |
+| -15% | 🔶 Caution: reduce position sizes by 50%, pause new entries for 2 hours |
+| -20% | 🛑 **HARD STOP**: Close all positions, halt trading, notify user |
+
+```javascript
+// Check on EVERY wake-up, before any other action
+async function check_drawdown_circuit_breaker() {
+  const balance = await hyperliquid_get_balance({})
+  const current = balance.accountValue
+
+  // Track peak balance (store in session)
+  PEAK_BALANCE = Math.max(PEAK_BALANCE || STARTING_BALANCE, current)
+
+  const drawdown_pct = ((PEAK_BALANCE - current) / PEAK_BALANCE) * 100
+
+  if (drawdown_pct >= 20) {
+    // HARD STOP
+    await telegram_send_message({
+      chat_id: TELEGRAM_CHAT_ID,
+      text: `🛑 *DRAWDOWN LIMIT HIT (-${drawdown_pct.toFixed(1)}%)*
+Peak: $${PEAK_BALANCE.toFixed(2)}
+Current: $${current.toFixed(2)}
+Loss: -$${(PEAK_BALANCE - current).toFixed(2)}
+
+Trading HALTED. Manual review required.
+All positions being closed...`
+    })
+    await cleanup()
+    return { halt: true, reason: 'drawdown_limit' }
+  }
+
+  if (drawdown_pct >= 15) {
+    POSITION_SIZE_MULTIPLIER = 0.5
+    PAUSE_NEW_ENTRIES_UNTIL = Date.now() + (2 * 60 * 60 * 1000)
+    return { halt: false, warning: 'caution', multiplier: 0.5 }
+  }
+
+  if (drawdown_pct >= 10) {
+    POSITION_SIZE_MULTIPLIER = 0.7
+    return { halt: false, warning: 'warning', multiplier: 0.7 }
+  }
+
+  POSITION_SIZE_MULTIPLIER = 1.0
+  return { halt: false }
+}
+```
+
+### Dynamic Stop-Loss Management
+
+**Move stops to protect profits as position goes in your favor:**
+
+| Position P&L | New Stop Level | Result |
+|--------------|----------------|--------|
+| +5% | Breakeven (-0.3% for fees) | Risk-free position |
+| +10% | +5% locked | Guaranteed profit |
+| +15% | +10% locked | More profit locked |
+| +20%+ | Trail 5% below max | Ride the trend |
+
+```javascript
+// Call for each position on every wake-up
+async function manage_dynamic_stop(position, mode) {
+  const pnl_pct = position.unrealizedPnl / position.marginUsed * 100
+  const entry = position.entryPx
+  const direction = position.szi > 0 ? 1 : -1  // 1 for long, -1 for short
+
+  let new_stop_pct = null
+
+  // Degen: aggressive trailing
+  if (mode === 'degen') {
+    if (pnl_pct >= 20) new_stop_pct = pnl_pct - 5      // Trail 5%
+    else if (pnl_pct >= 15) new_stop_pct = 10
+    else if (pnl_pct >= 10) new_stop_pct = 5
+    else if (pnl_pct >= 5) new_stop_pct = -0.3         // Breakeven
+  }
+
+  // Aggressive
+  if (mode === 'aggressive') {
+    if (pnl_pct >= 15) new_stop_pct = pnl_pct - 4      // Trail 4%
+    else if (pnl_pct >= 12) new_stop_pct = 8
+    else if (pnl_pct >= 8) new_stop_pct = 4
+    else if (pnl_pct >= 5) new_stop_pct = -0.3         // Breakeven
+  }
+
+  // Balanced
+  if (mode === 'balanced') {
+    if (pnl_pct >= 10) new_stop_pct = pnl_pct - 3      // Trail 3%
+    else if (pnl_pct >= 8) new_stop_pct = 5
+    else if (pnl_pct >= 5) new_stop_pct = 2
+    else if (pnl_pct >= 3) new_stop_pct = -0.2         // Breakeven
+  }
+
+  // Conservative
+  if (mode === 'conservative') {
+    if (pnl_pct >= 6) new_stop_pct = pnl_pct - 2       // Trail 2%
+    else if (pnl_pct >= 4) new_stop_pct = 2
+    else if (pnl_pct >= 2.5) new_stop_pct = -0.1       // Breakeven
+  }
+
+  if (new_stop_pct !== null) {
+    const new_stop_price = entry * (1 + (new_stop_pct / 100) * direction)
+
+    // Only move stop if it's BETTER than current
+    const current_stop = await get_current_stop(position.coin)
+    const is_better = direction > 0
+      ? new_stop_price > current_stop
+      : new_stop_price < current_stop
+
+    if (is_better) {
+      await move_stop_loss(position.coin, new_stop_price)
+
+      await telegram_send_message({
+        chat_id: TELEGRAM_CHAT_ID,
+        text: `🔒 *${position.coin}* Stop moved
+P&L: +${pnl_pct.toFixed(1)}%
+New SL: $${new_stop_price.toFixed(4)} (${new_stop_pct > 0 ? '+' : ''}${new_stop_pct.toFixed(1)}% locked)`
+      })
+    }
+  }
+}
+```
+
+### Re-entry After Trailing Stop
+
+When closed by trailing stop (not original SL), consider re-entering if trend continues:
+
+```javascript
+async function check_reentry_opportunity(closed_position) {
+  // Only for trailing stop exits, not losses
+  if (closed_position.exit_reason !== 'trailing_stop') return null
+  if (closed_position.realized_pnl <= 0) return null
+
+  // Wait 5 minutes for price to settle
+  await wait(5 * 60 * 1000)
+
+  const current_price = await hyperliquid_get_price(closed_position.coin)
+  const exit_price = closed_position.exit_price
+  const was_long = closed_position.direction === 'LONG'
+
+  // Check if price moved further in our direction (trend continuing)
+  const price_continued = was_long
+    ? current_price > exit_price * 1.015  // +1.5% above exit
+    : current_price < exit_price * 0.985  // -1.5% below exit
+
+  if (price_continued) {
+    // Quick trend validation
+    const research = await quick_trend_check(closed_position.coin)
+
+    if (research.confidence >= 6 && research.direction === closed_position.direction) {
+      await telegram_send_message({
+        chat_id: TELEGRAM_CHAT_ID,
+        text: `🔄 *${closed_position.coin}* Re-entry opportunity
+Exited at: $${exit_price.toFixed(4)} (+${closed_position.pnl_pct.toFixed(1)}%)
+Current: $${current_price.toFixed(4)}
+Trend confirmed, re-entering ${closed_position.direction}...`
+      })
+
+      return {
+        reentry: true,
+        coin: closed_position.coin,
+        direction: closed_position.direction
+      }
+    }
+  }
+
+  return { reentry: false }
+}
+```
 
 ## Funding Rate Edge
 
@@ -236,6 +409,35 @@ Current: ${PRICE} | Entry: ${ENTRY}
 {ACTION_TAKEN}
 ```
 
+**Stop Moved (Profit Locked):**
+```
+🔒 *{COIN}* Stop adjusted
+P&L: +{PNL_PCT}%
+New SL: ${NEW_SL} ({LOCKED_PCT}% locked)
+```
+
+**Breakeven Reached:**
+```
+🛡️ *{COIN}* Breakeven secured
+Position now risk-free
+Current P&L: +{PNL_PCT}%
+```
+
+**Re-entry After Stop:**
+```
+🔄 *{COIN}* Re-entry
+Exited at: ${EXIT} (+{LOCKED}%)
+Price continued: ${CURRENT}
+Re-entering {DIRECTION}...
+```
+
+**Drawdown Warning:**
+```
+⚠️ *Drawdown Alert* -{DRAWDOWN_PCT}%
+Peak: ${PEAK} → Current: ${CURRENT}
+Action: {REDUCED_SIZE / PAUSED / HALTED}
+```
+
 **Target Reached:**
 ```
 🎉 *TARGET REACHED!*
@@ -299,8 +501,11 @@ Guidelines are guardrails, not handcuffs. Use your research and judgment.
 
 **Hard limits (non-negotiable):**
 - Daily loss limit → hard stop
-- 3 consecutive losses → cooldown
+- 3 consecutive losses → cooldown **4-6 hours** (not minutes!)
+- 5 losses in one day → **stop for 24 hours**
 - Never risk more than mode's base risk per trade
+- **-20% drawdown from peak → HALT ALL TRADING**
+- **Minimum R:R = 2:1** (TP must be ≥2× SL distance)
 
 ## Important Notes
 

@@ -28,13 +28,20 @@ If target hit early → Report success, keep running (compound gains).
 |-----------|-------|
 | Target | +20% annually |
 | Leverage | 1-2x (near spot) |
-| Position Size | 5-10% of account |
+| Position Size | 5-8% of account |
 | Stop Loss | -2% to -3% |
-| Take Profit | +5% to +8% |
-| Trailing Stop | 4% after +5% profit |
+| Take Profit | +5% to +8% (min 2× SL) |
 | Max Positions | 6 (highly diversified) |
 | Scan Interval | 3 days (72 hours) |
 | Daily Loss Limit | -5% (hard stop) |
+
+## Dynamic Stop-Loss Levels
+
+| Position P&L | Move Stop To | Locked Profit |
+|--------------|--------------|---------------|
+| +2.5% | Breakeven (-0.1%) | Risk-free |
+| +4% | +2% | +2% guaranteed |
+| +6%+ | Trail 2% below max | Ride the trend |
 
 ## Allowed Coins
 
@@ -163,8 +170,15 @@ hyperliquid_update_leverage({
   is_cross: true
 })
 
-// Small position size (5-10%)
-MARGIN = accountValue * 0.08  // 8% default
+// Small position size (5-8%)
+MARGIN = accountValue * 0.06  // 6% default
+
+// Calculate TP/SL with enforced 2:1 minimum R:R
+const SL_PCT = 2.5  // -2.5%
+const TP_PCT = Math.max(SL_PCT * 2, 5)  // Minimum 2× SL = +5%
+
+const SL_PRICE = ENTRY_PRICE * (is_buy ? (1 - SL_PCT/100) : (1 + SL_PCT/100))
+const TP_PRICE = ENTRY_PRICE * (is_buy ? (1 + TP_PCT/100) : (1 - TP_PCT/100))
 
 // Place bracket order with very tight stops
 hyperliquid_place_bracket_order({
@@ -172,7 +186,7 @@ hyperliquid_place_bracket_order({
   is_buy: true,  // or false for SHORT
   size: POSITION_SIZE,
   entry_price: ENTRY_PRICE,
-  take_profit_price: TP_PRICE,  // +5-8%
+  take_profit_price: TP_PRICE,  // +5-8% (2× SL minimum)
   stop_loss_price: SL_PRICE     // -2-3%
 })
 ```
@@ -187,8 +201,10 @@ hyperliquid_subscribe_webhook({
   coins: ["COIN"],
   events: ["fills", "orders"],
   position_alerts: [
-    { condition: "pnl_pct_gt", value: 4 },   // Early profit
-    { condition: "pnl_pct_lt", value: -1.5 } // Early warning
+    { coin: "COIN", condition: "pnl_pct_gt", value: 2.5 },  // Breakeven trigger
+    { coin: "COIN", condition: "pnl_pct_gt", value: 4 },    // +2% lock trigger
+    { coin: "COIN", condition: "pnl_pct_gt", value: 6 },    // Trailing start
+    { coin: "COIN", condition: "pnl_pct_lt", value: -1.5 }  // Early warning
   ]
 })
 
@@ -224,7 +240,18 @@ schedule({
 hyperliquid_get_balance({})
 hyperliquid_get_positions({})
 
-// 2. Report to Telegram
+// 2. CHECK DRAWDOWN CIRCUIT BREAKER
+const drawdown_check = await check_drawdown_circuit_breaker()
+if (drawdown_check.halt) {
+  STOP
+}
+
+// 3. Manage dynamic stops for ALL positions
+for (const position of positions) {
+  await manage_dynamic_stop(position, 'conservative')
+}
+
+// 4. Report to Telegram
 telegram_send_message({
   chat_id: TELEGRAM_CHAT_ID,
   text: `📊 3-Day Report:
@@ -239,12 +266,17 @@ Progress: ${progress}%`
 ### On Trade Event (fill/order)
 
 1. Report what happened (TP/SL hit?)
-2. If position closed → slot opens (don't rush to fill)
+2. If closed by trailing stop with profit → check re-entry opportunity
+3. If position closed → slot opens (don't rush to fill)
 
 ### On Position Alert
 
-1. +4% → Enable trailing stop (4%)
-2. -1.5% → Review, consider early exit
+| Alert | Action |
+|-------|--------|
+| +2.5% | Move stop to breakeven |
+| +4% | Lock +2% profit |
+| +6%+ | Trail 2% behind price |
+| -1.5% | Review, consider early exit |
 
 ### On Schedule (3-day scan)
 
@@ -325,17 +357,30 @@ hyperliquid_unsubscribe_webhook({})
 ```
 Account Balance: $X
 Max Positions: 6
-Per Position: 5-10% margin (8% default)
+Per Position: 5-8% margin (6% default)
 Leverage: 1-2x (2x default)
 Cash Reserve: Always keep 40%+
 
 Example ($1,000 account):
-- Per position: $80 margin (8%)
+- Per position: $60 margin (6%)
 - Leverage: 2x
-- Notional per position: $160
-- Max 6 positions = $480 margin (48%)
-- Cash reserve: $520 (52%)
+- Notional per position: $120
+- Max 6 positions = $360 margin (36%)
+- Cash reserve: $640 (64%)
+- Max loss per position (2.5% SL): $1.50
+- Max loss all positions: $9 (0.9% of account)
 ```
+
+## Risk Controls
+
+| Control | Value |
+|---------|-------|
+| Daily Loss Limit | -5% → Stop for day |
+| 3 Consecutive Losses | Cooldown 4-6 hours, size -50% |
+| 5 Losses in Day | Stop for 24 hours |
+| Drawdown -15% | Reduce size 50%, pause 2 hours |
+| Drawdown -20% | **HALT ALL TRADING** |
+| Min R:R | 2:1 (enforced) |
 
 ## Notifications
 
