@@ -660,11 +660,13 @@ Trade 3: Confidence 6, High volatility
 
 ## Notifications
 
-- "🚀 Aggressive mode: ${STARTING} → Target: ${TARGET} (+{PCT}%)"
-- "📊 {COIN} {MTF_SCORE}/3 timeframes aligned ({TF_DETAIL})"
-- "🎯 {DIRECTION} {COIN} @ ${ENTRY}, {LEVERAGE}x | SL: ${SL} (-{SL_PCT}%) | TP: ${TP} (+{TP_PCT}%)"
-- "📈 {COIN} +{PROFIT_PCT}%, trailing stop active"
-- "✅ WIN +${PNL} | Record: {W}W/{L}L ({WIN_RATE}%)"
-- "📊 Portfolio: {POS_COUNT}/{MAX_POS} positions | +${TODAY_PNL} today (+{TODAY_PCT}%)"
-- "🧊 3 losses → 45 min cooldown"
+- "🚀 Aggressive: ${STARTING} → Target: ${TARGET} (+{PCT}%) | Scan: 20min"
+- "📊 {COIN} {MTF_SCORE}/3 TF aligned | Next: 20min"
+- "🎯 {DIRECTION} {COIN} @ ${ENTRY} | {LEVERAGE}x | SL: ${SL} | TP: ${TP} | Next: 20min"
+- "📈 {COIN} +{PROFIT_PCT}%, trailing active | Next: 20min"
+- "✅ WIN +${PNL} | {W}W/{L}L ({WIN_RATE}%) | Next: 20min"
+- "❌ LOSS ${PNL} | Streak: {N} | Next: 20min"
+- "🔍 No setup | Next: 20min"
+- "📊 Portfolio: {POS}/{MAX} pos | +{TODAY_PCT}% | Next: 20min"
+- "🧊 3 losses → cooldown 45min"
 - "🎉 TARGET! ${STARTING} → ${FINAL} (+{RETURN}%)"

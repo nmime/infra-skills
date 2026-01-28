@@ -424,13 +424,13 @@ Example ($1,000 account):
 
 ## Notifications
 
-All actions are logged. User sees:
-- "🛡️ Conservative mode started: $1,000 → Annual target: $1,200 (+20%)"
-- "📊 3-day scan: Market unclear, staying in cash. Positions: 2/6"
-- "Opened {LEVERAGE}x {DIRECTION} on {COIN} @ ${ENTRY} (Confidence: {CONF}/10, Weekly {TREND})"
-- "📊 3-day report: ${BALANCE} (+{PNL_PCT}%), on track for +20% annual"
-- "Closed {COIN} @ ${EXIT}, P&L: +${PNL} (+{PNL_PCT}%)"
-- "📅 Q{QUARTER} Review: +{QUARTERLY_PCT}%, {STATUS} of +{QUARTERLY_TARGET}% target. Continuing strategy."
-- "[1 year later] 🎉 Annual target hit! ${STARTING} → ${FINAL} (+{RETURN}%)"
+- "🛡️ Conservative: ${STARTING} → Annual: ${TARGET} (+20%) | Scan: 3d"
+- "🔍 Market unclear, staying cash | Next: 3d"
+- "🎯 {DIRECTION} {COIN} @ ${ENTRY} | {LEV}x | Conf: {CONF}/10 | Next: 3d"
+- "📊 Report: ${BALANCE} (+{PNL_PCT}%) | Pos: {POS}/{MAX} | Next: 3d"
+- "✅ WIN +${PNL} | {W}W/{L}L | Next: 3d"
+- "❌ LOSS ${PNL} | Next: 3d"
+- "📅 Q{Q} Review: +{PCT}% | Next: 3d"
+- "🎉 ANNUAL TARGET! ${STARTING} → ${FINAL} (+{RETURN}%)"
 
 Patient. Protected. Compounding.

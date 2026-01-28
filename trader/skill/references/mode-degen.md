@@ -598,11 +598,13 @@ hyperliquid_unsubscribe_webhook({})
 
 ## Notifications
 
-- "🎰 Degen mode: ${STARTING} → Target: ${TARGET} (+{PCT}%)"
-- "📊 High volatility (ATR {ATR}%), reducing size to 60%"
-- "💰 Extreme positive funding on {COIN}, short bias"
-- "🎯 {DIRECTION} {COIN} @ ${ENTRY}, SL: ${SL} (-{SL_PCT}%), TP: ${TP} (+{TP_PCT}%)"
-- "✅ WIN +${PNL} | Record: {W}W/{L}L ({WIN_RATE}%)"
-- "🧊 3 consecutive losses. 30 min cooldown."
-- "⚠️ Down {DAILY_DD}% today, raising confidence threshold to {MIN_CONF}+"
+- "🎰 Degen mode: ${STARTING} → Target: ${TARGET} (+{PCT}%) | Scan: 10min"
+- "📊 High volatility (ATR {ATR}%), reducing size | Next: 10min"
+- "💰 Extreme funding on {COIN}, {BIAS} bias | Next: 10min"
+- "🎯 {DIRECTION} {COIN} @ ${ENTRY} | SL: ${SL} | TP: ${TP} | Next: 10min"
+- "✅ WIN +${PNL} | {W}W/{L}L ({WIN_RATE}%) | Next: 10min"
+- "❌ LOSS ${PNL} | Streak: {N} | Next: 10min"
+- "🔍 No setup | Next: 10min"
+- "🧊 3 losses → cooldown 30min"
+- "⚠️ Down {DD}% → reducing size | Next: 10min"
 - "🎉 TARGET! ${STARTING} → ${FINAL} (+{RETURN}%)"

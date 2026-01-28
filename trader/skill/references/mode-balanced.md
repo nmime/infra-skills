@@ -371,14 +371,13 @@ If ANY checkbox = NO → SKIP
 
 ## Notifications
 
-All actions are logged. User sees:
-- "⚖️ Balanced mode started: $500 → Target: $700 (+40%)"
-- "Scanned markets - no high-confidence setups, waiting..."
-- "Opened {LEVERAGE}x {DIRECTION} on {COIN} @ ${ENTRY} (Confidence: {CONF}/10, Trend: {TREND}, Funding: {FUNDING})"
-- "📊 Portfolio: {POS_COUNT}/{MAX_POS} positions, +{TOTAL_PCT}% total"
-- "{COIN} +{PROFIT_PCT}%, trailing stop active"
-- "Closed {COIN} @ ${EXIT}, P&L: +${PNL} (+{PNL_PCT}%)"
-- "Progress: ${BALANCE} / ${TARGET} ({PROGRESS}% to target)"
-- "🎯 TARGET REACHED! ${STARTING} → ${FINAL} (+{RETURN}%)"
+- "⚖️ Balanced: ${STARTING} → Target: ${TARGET} (+{PCT}%) | Scan: 2hr"
+- "🔍 No setup found | Next: 2hr"
+- "🎯 {DIRECTION} {COIN} @ ${ENTRY} | {LEV}x | Conf: {CONF}/10 | Next: 2hr"
+- "📊 Portfolio: {POS}/{MAX} | +{TOTAL_PCT}% | Next: 2hr"
+- "📈 {COIN} +{PROFIT_PCT}%, trailing active | Next: 2hr"
+- "✅ WIN +${PNL} | {W}W/{L}L | Next: 2hr"
+- "❌ LOSS ${PNL} | Streak: {N} | Next: 2hr"
+- "🎉 TARGET! ${STARTING} → ${FINAL} (+{RETURN}%)"
 
 Patient, diversified, disciplined.

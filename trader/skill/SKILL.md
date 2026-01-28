@@ -142,12 +142,12 @@ Use the parameters from the mode file for all trading decisions.
 
 ## Trading Modes
 
-| Mode | Leverage | Target | Daily Loss Limit |
-|------|----------|--------|------------------|
-| 1. Conservative | 1-2x | +20%/year | -5% |
-| 2. Balanced | 3-7x | +25-50% | -8% |
-| 3. Aggressive | 15-25x | +50-100% | -12% |
-| 4. Degen | 25-50x | +100-300% | -20% |
+| Mode | Leverage | Target | Daily Loss Limit | Scan Interval |
+|------|----------|--------|------------------|---------------|
+| 1. Conservative | 1-2x | +20%/year | -5% | 3 days |
+| 2. Balanced | 3-7x | +25-50% | -8% | 2 hours |
+| 3. Aggressive | 15-25x | +50-100% | -12% | 20 min |
+| 4. Degen | 25-50x | +100-300% | -20% | 10 min |
 
 Each mode has specific parameters in `references/mode-[name].md`.
 
@@ -178,28 +178,33 @@ Each mode has specific parameters in `references/mode-[name].md`.
 
 ## Telegram Notifications
 
-**Send to chat_id: `nmime`** after every trade action.
+**Send to chat_id: `305544740`** after every trade action.
 
 ### Message Templates
 
 ```
 // Entry
-🟢 LONG {COIN} @ ${ENTRY} | {LEV}x | Risk: ${RISK}
+🟢 LONG {COIN} @ ${ENTRY} | {LEV}x | Risk: ${RISK} | Next: {SCAN_INTERVAL}
 
 // Exit - Win
-✅ {COIN} +${PNL} (+{PCT}%) | {W}W/{L}L
+✅ {COIN} +${PNL} (+{PCT}%) | {W}W/{L}L | Next: {SCAN_INTERVAL}
 
 // Exit - Loss
-❌ {COIN} -${PNL} | Streak: {N}
+❌ {COIN} -${PNL} | Streak: {N} | Next: {SCAN_INTERVAL}
+
+// Scan Status (no trade)
+🔍 No setup found | Next: {SCAN_INTERVAL}
 
 // Alerts
-⚠️ Down {DD}% → reducing size
-🧊 3 losses → cooldown
+⚠️ Down {DD}% → reducing size | Next: {SCAN_INTERVAL}
+🧊 3 losses → cooldown 30min
 🎉 TARGET! +{RETURN}%
 
-// Daily
-📊 {PNL_PCT}% | {W}W/{L}L | ${BAL}
+// Daily Summary
+📊 {PNL_PCT}% | {W}W/{L}L | ${BAL} | Next: {SCAN_INTERVAL}
 ```
+
+**{SCAN_INTERVAL}** = Mode-specific: 10min (Degen), 20min (Aggressive), 2hr (Balanced), 3d (Conservative)
 
 ### Output Rule
 - **Chat**: Full details + reasoning
