@@ -14,84 +14,144 @@ const MODE_CONFIG = {
   degen: {
     leverage: [15, 25],           // 15-25x (max 25x)
     position_pct: 0.25,           // 25% of account
+    risk_per_trade: 0.05,         // 5% max risk per trade
     sl_pct: 10, tp_pct: 20,
-    trailing: { trigger: 20, distance: 5 },
+    // Progressive trailing (research-based: tighten as profit grows)
+    trailing: [
+      { profit: 10, distance: 8 },   // +10% → 8% trail
+      { profit: 15, distance: 5 },   // +15% → 5% trail
+      { profit: 20, distance: 3 }    // +20% → 3% trail
+    ],
+    partials: [
+      { at_pct: 50, take: 0.30 },    // 30% at +10%
+      { at_pct: 75, take: 0.30 }     // 30% at +15%
+    ],
     confidence_min: 5,
-    scan_interval: { base: 600, volatile: 300, quiet: 1200 },  // 10min/5min/20min
+    scan_interval: { base: 600, volatile: 300, quiet: 1200 },
     daily_limit: -15,
     max_positions: 3,
-    // Risk profile: YOLO
-    skip_btc_check: true,
-    skip_time_filter: true,
-    skip_funding_check: true,
+    // Risk profile: High Risk (ALL checks apply, smaller penalties)
+    btc_penalty: -1,
+    funding_penalty: -1,
+    time_size_mult: 0.85,
     slippage: 0.8, max_spread: 0.5,
     min_liquidity_mult: 5
   },
   aggressive: {
     leverage: [5, 15],            // 5-15x (max 15x)
     position_pct: 0.15,           // 15% of account
+    risk_per_trade: 0.03,         // 3% max risk per trade
     sl_pct: 6, tp_pct: 12,
-    trailing: { trigger: 15, distance: 4 },
+    trailing: [
+      { profit: 6, distance: 6 },
+      { profit: 10, distance: 4 },
+      { profit: 15, distance: 3 }
+    ],
+    partials: [
+      { at_pct: 50, take: 0.30 },
+      { at_pct: 75, take: 0.30 }
+    ],
     confidence_min: 6,
-    scan_interval: { base: 1200, volatile: 600, quiet: 2400 },  // 20min/10min/40min
+    scan_interval: { base: 1200, volatile: 600, quiet: 2400 },
     daily_limit: -10,
     max_positions: 3,
-    // Risk profile: High
-    skip_btc_check: false,        // Check but don't hard skip
-    skip_time_filter: false,
-    skip_funding_check: false,
+    // Risk profile: Moderate-High
+    btc_penalty: -2,
+    funding_penalty: -1,
+    time_size_mult: 0.75,
     slippage: 0.5, max_spread: 0.3,
     min_liquidity_mult: 8
   },
   balanced: {
     leverage: [3, 5],             // 3-5x
     position_pct: 0.10,           // 10% of account
+    risk_per_trade: 0.02,         // 2% max risk per trade (optimal)
     sl_pct: 4, tp_pct: 8,
-    trailing: { trigger: 10, distance: 3 },
+    trailing: [
+      { profit: 4, distance: 4 },
+      { profit: 6, distance: 3 },
+      { profit: 10, distance: 2 }
+    ],
+    partials: [
+      { at_pct: 50, take: 0.30 },
+      { at_pct: 75, take: 0.30 }
+    ],
     confidence_min: 7,
-    scan_interval: { base: 7200, volatile: 3600, quiet: 14400 },  // 2hr/1hr/4hr
+    scan_interval: { base: 7200, volatile: 3600, quiet: 14400 },
     daily_limit: -8,
     max_positions: 4,
-    // Risk profile: Moderate
-    btc_alignment: 'REQUIRED',
-    skip_time_filter: false,
-    skip_funding_check: false,
+    // Risk profile: Moderate (strict checks)
+    btc_check: 'REQUIRED',
+    funding_penalty: -2,
+    time_size_mult: 0.60,
     slippage: 0.3, max_spread: 0.2,
     min_liquidity_mult: 10
   },
   conservative: {
     leverage: [1, 2],             // 1-2x
     position_pct: 0.06,           // 6% of account
+    risk_per_trade: 0.01,         // 1% max risk per trade
     sl_pct: 2.5, tp_pct: 5,
-    trailing: { trigger: 6, distance: 2 },
+    trailing: [
+      { profit: 2.5, distance: 3 },
+      { profit: 4, distance: 2 },
+      { profit: 6, distance: 1.5 }
+    ],
+    partials: [
+      { at_pct: 50, take: 0.30 },
+      { at_pct: 75, take: 0.30 }
+    ],
     confidence_min: 8,
-    scan_interval: { base: 259200, volatile: 86400, quiet: 432000 },  // 3d/1d/5d
+    scan_interval: { base: 259200, volatile: 86400, quiet: 432000 },
     daily_limit: -5,
     max_positions: 6,
     max_margin: 0.60,
-    // Risk profile: Capital preservation
-    btc_alignment: 'REQUIRED',
-    funding_check: 'STRICT',      // Hard skip if against
+    // Risk profile: Capital Preservation (strictest)
+    btc_check: 'REQUIRED',
+    funding_check: 'REQUIRED',
     weekend_trading: false,
+    time_size_mult: 0.50,
     slippage: 0.2, max_spread: 0.15,
     min_liquidity_mult: 15
   }
 }
 ```
 
-## Risk Profiles
+## Risk Check Functions
 
 ```javascript
-function get_risk_checks(mode) {
+function apply_risk_checks(mode, coin, direction, confidence) {
   const config = MODE_CONFIG[mode]
-  return {
-    check_btc: !config.skip_btc_check,
-    check_time: !config.skip_time_filter,
-    check_funding: !config.skip_funding_check,
-    btc_hard_skip: config.btc_alignment === 'REQUIRED',
-    funding_hard_skip: config.funding_check === 'STRICT',
-    min_liquidity: config.min_liquidity_mult
+  let final_confidence = confidence
+  let size_mult = 1.0
+  let skip = false
+
+  // BTC alignment check (ALL modes check, different consequences)
+  const btc = await check_btc_alignment(coin, direction)
+  if (config.btc_check === 'REQUIRED' && !btc.aligned) {
+    skip = true  // Hard skip for balanced/conservative
+  } else if (config.btc_penalty) {
+    final_confidence += btc.aligned ? 0 : config.btc_penalty
   }
+
+  // Funding rate check (ALL modes check)
+  const funding = await check_funding_edge(coin, direction)
+  if (config.funding_check === 'REQUIRED' && funding.confidence_penalty < 0) {
+    skip = true  // Hard skip for conservative
+  } else if (config.funding_penalty) {
+    final_confidence += funding.confidence_penalty > 0 ? 0 : config.funding_penalty
+  }
+
+  // Time filter (ALL modes apply size reduction)
+  const time = check_trading_conditions()
+  if (config.weekend_trading === false && time.is_weekend) {
+    skip = true
+  }
+  if (time.is_weekend || time.is_asia_night) {
+    size_mult *= config.time_size_mult
+  }
+
+  return { skip, confidence: final_confidence, size_mult }
 }
 ```
 
@@ -460,13 +520,21 @@ async function get_scan_interval(mode) {
 ```javascript
 async function check_trailing_stop(position, mode) {
   const config = MODE_CONFIG[mode]
-  const trailing = config.trailing
+  const trailing_levels = config.trailing  // Array of {profit, distance}
   const pnl_pct = position.unrealizedPnl / position.marginUsed * 100
 
-  if (pnl_pct >= trailing.trigger) {
+  // Progressive trailing: find appropriate level based on profit
+  let active_trail = null
+  for (const level of trailing_levels) {
+    if (pnl_pct >= level.profit) {
+      active_trail = level  // Higher profit = tighter trail
+    }
+  }
+
+  if (active_trail) {
     const trail_price = position.markPx * (position.szi > 0
-      ? (1 - trailing.distance / 100)
-      : (1 + trailing.distance / 100))
+      ? (1 - active_trail.distance / 100)
+      : (1 + active_trail.distance / 100))
 
     const current_stop = await get_current_stop(position.coin)
     const is_better = position.szi > 0
@@ -475,7 +543,11 @@ async function check_trailing_stop(position, mode) {
 
     if (is_better) {
       await move_stop_loss(position.coin, trail_price)
-      return { moved: true, new_stop: trail_price, locked: pnl_pct - trailing.distance }
+      const locked = pnl_pct - active_trail.distance
+      telegram_send_message({
+        text: `🔒 ${position.coin} +${pnl_pct.toFixed(1)}% | Trail ${active_trail.distance}% | Locked +${locked.toFixed(1)}%`
+      })
+      return { moved: true, new_stop: trail_price, locked, trail_distance: active_trail.distance }
     }
   }
   return { moved: false }

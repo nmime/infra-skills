@@ -12,18 +12,28 @@ target: +100% to +300% based on account size
 
 leverage: 15-25x (max 25x)
 position: 25% of account
+risk_per_trade: 5% max
 sl: -10%
 tp: +20% (min 2x SL)
-trailing: 5% distance after +20% profit
 max_positions: 3
 scan: 10min base (5min volatile, 20min quiet)
 daily_limit: -15%
 confidence_min: 5
 
-risk_profile: YOLO
-  skip_btc_check: true
-  skip_time_filter: true
-  skip_funding_check: true
+risk_profile: High Risk (ALL checks apply - smaller penalties)
+  btc_check: penalty -1 (not skip)
+  funding_check: penalty -1 (not skip)
+  time_filter: size x0.85 off-hours
+
+progressive_trailing:
+  +10% profit → 8% trail
+  +15% profit → 5% trail
+  +20% profit → 3% trail (lock gains)
+
+partial_takes:
+  +10% (50% TP) → take 30%
+  +15% (75% TP) → take 30%
+  remainder → trail
 ```
 
 ## Setup

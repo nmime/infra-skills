@@ -12,18 +12,28 @@ target: +100% to +300% based on account size
 
 leverage: 15-25x (max 25x)
 position: 25% of account
+risk_per_trade: 5% max
 sl: -10%
 tp: +20% (min 2x SL)
-trailing: 5% distance after +20% profit
 max_positions: 3
 scan: 10min base (5min volatile, 20min quiet)
 daily_limit: -15%
 confidence_min: 5
 
-risk_profile: YOLO
-  skip_btc_check: true
-  skip_time_filter: true
-  skip_funding_check: true
+risk_profile: High Risk (NOT YOLO - all checks apply)
+  btc_check: penalty -1 (not skip)
+  funding_check: penalty -1 (not skip)
+  time_filter: size x0.85 off-hours
+
+progressive_trailing:
+  +10% profit → 8% trail (breathing room)
+  +15% profit → 5% trail (tightening)
+  +20% profit → 3% trail (lock gains)
+
+partial_takes:
+  50% of TP (+10%) → take 30%
+  75% of TP (+15%) → take 30%
+  remainder → runs with trail
 ```
 
 ## Setup
@@ -78,22 +88,30 @@ hyperliquid_get_all_prices({ coins: [coin] })
 hyperliquid_get_funding_rates({ coin })
 ```
 
-### Step 3b: Pre-Trade Checks (MINIMAL - Degen skips most)
+### Step 3b: Pre-Trade Checks (ALL checks apply - smaller penalties)
 
 ```javascript
-// Only check: coin exists + basic liquidity
+// Liquidity check (required for all modes)
 const liq = await check_liquidity(coin, margin, 'degen')
 if (!liq.ok) return SKIP
 
-// NO BTC check (skip_btc_check: true)
-// NO time filter (skip_time_filter: true)
-// NO funding check (skip_funding_check: true)
+// BTC alignment (penalty, not skip - degen takes more risk)
+const btc = await check_btc_alignment(coin, direction)
+confidence += btc.aligned ? 0 : -1  // Small penalty
 
-// V3 safety checks still apply
+// Funding rate (penalty, not skip)
+const funding = await check_funding_edge(coin, direction)
+confidence += funding.confidence_penalty > 0 ? 0 : -1
+
+// Time filter (size reduction, not skip)
+const time = check_trading_conditions()
+let size_mult = time.is_weekend || time.is_asia_night ? 0.85 : 1.0
+
+// V3 safety checks (always apply)
 const balance = await hyperliquid_get_balance({})
 const dd = await check_drawdown_circuit_breaker(chat_id, balance.accountValue)
 if (dd.halt) return STOP
-let size_mult = dd.size_multiplier
+size_mult *= dd.size_multiplier
 
 const loss = await check_consecutive_losses(chat_id)
 if (loss.stop_24h) return STOP
@@ -103,7 +121,7 @@ const daily = await check_daily_loss_limit(chat_id, 'degen')
 if (daily.exceeded) return SKIP
 
 if (confidence < 5) {
-  notify('degen', 'scan', { pos: positions.length, max: 2, bal: accountValue })
+  notify('degen', 'scan', { pos: positions.length, max: 3, bal: accountValue })
   return SKIP
 }
 ```
@@ -237,10 +255,15 @@ if (positions.length < 3) // research new trade
 ### On Position Alert
 
 ```
-+5%  → breakeven (-0.3%)
-+10% → +5% locked
-+15% → +10% locked
-+20% → trail 5% below max
++5%  → move SL to breakeven (-0.3%)
++10% → progressive trail activates (8% distance)
++15% → trail tightens to 5%
++20% → trail tightens to 3% (lock gains)
+
+Partials:
++10% (50% of TP) → take 30% profit
++15% (75% of TP) → take 30% profit
+Remainder runs with trail
 ```
 
 ### LAST STEP (NEVER SKIP)
