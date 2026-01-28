@@ -247,7 +247,7 @@ if (drawdown_check.halt) {
 // 3. Manage dynamic stops and partial takes for ALL positions
 for (const position of positions) {
   await manage_dynamic_stop(position, 'aggressive')
-  await manage_partial_takes(position, 'aggressive')
+  await manage_partial_takes(position, 12)  // tp_pct = 12% for aggressive
 }
 
 // 4. Report ALL positions to Telegram

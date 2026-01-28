@@ -149,13 +149,56 @@ Each mode file contains a step-by-step setup flow. Execute every step in order �
 
 Each mode has specific parameters in `references/mode-[name].md`.
 
+## Mode Configuration Reference
+
+```javascript
+const MODE_CONFIG = {
+  degen: {
+    leverage_min: 15, leverage_max: 25,
+    position_pct: 0.25,     // 25% of account
+    sl_pct: 10,             // -10%
+    tp_pct: 20,             // +20%
+    confidence_min: 5,
+    scan_interval: 600,     // 10 min
+    slippage: 0.8, max_spread: 0.5
+  },
+  aggressive: {
+    leverage_min: 5, leverage_max: 15,
+    position_pct: 0.15,     // 15%
+    sl_pct: 6,              // -6%
+    tp_pct: 12,             // +12%
+    confidence_min: 6,
+    scan_interval: 1200,    // 20 min
+    slippage: 0.5, max_spread: 0.3
+  },
+  balanced: {
+    leverage_min: 3, leverage_max: 5,
+    position_pct: 0.10,     // 10%
+    sl_pct: 4,              // -4%
+    tp_pct: 8,              // +8%
+    confidence_min: 7,
+    scan_interval: 7200,    // 2 hours
+    slippage: 0.3, max_spread: 0.2
+  },
+  conservative: {
+    leverage_min: 1, leverage_max: 2,
+    position_pct: 0.06,     // 6%
+    sl_pct: 2.5,            // -2.5%
+    tp_pct: 5,              // +5%
+    confidence_min: 8,
+    scan_interval: 259200,  // 3 days
+    slippage: 0.2, max_spread: 0.15
+  }
+}
+```
+
 ## Risk Management
 
 | Rule | Implementation |
 |------|----------------|
-| Position Size | `BASE_RISK × (confidence/10) × volatility_factor` |
-| Stop Loss | 1.5-2× ATR, max 60% of liquidation distance |
-| Take Profit | ≥2× stop loss (2:1 R:R minimum, **enforced**) |
+| Position Size | `account × position_pct × POSITION_SIZE_MULTIPLIER` |
+| Stop Loss | Use `sl_pct` from MODE_CONFIG |
+| Take Profit | Use `tp_pct` from MODE_CONFIG (always ≥2× SL) |
 | Consecutive Losses | 3 → cooldown **4-6 hours**, reduce size 50% |
 | Daily Losses | 5 losses in one day → **stop for 24 hours** |
 | Drawdown | Tiered response (see below) |
@@ -446,16 +489,16 @@ Skipping trade.`
 | 100% TP | Close remaining 40% | Full target |
 
 ```javascript
-async function manage_partial_takes(position, mode) {
+// Call with: manage_partial_takes(position, MODE_CONFIG[mode].tp_pct)
+async function manage_partial_takes(position, tp_pct) {
   const pnl_pct = position.unrealizedPnl / position.marginUsed * 100
-  const tp_distance = TP_PCT  // Target profit %
 
   // Calculate progress to TP
-  const progress_to_tp = pnl_pct / tp_distance
+  const progress_to_tp = pnl_pct / tp_pct
 
   // Track which partials already taken (store in session)
   const partials_key = `${position.coin}_partials`
-  const partials_taken = SESSION[partials_key] || { p50: false, p75: false }
+  const partials_taken = SESSION.partials_taken[partials_key] || { p50: false, p75: false }
 
   // 50% to TP → close 30%
   if (progress_to_tp >= 0.5 && !partials_taken.p50) {
@@ -463,7 +506,7 @@ async function manage_partial_takes(position, mode) {
     await hyperliquid_market_close({ coin: position.coin, size: close_size })
 
     partials_taken.p50 = true
-    SESSION[partials_key] = partials_taken
+    SESSION.partials_taken[partials_key] = partials_taken
 
     await telegram_send_message({
       chat_id: TELEGRAM_CHAT_ID,
@@ -479,7 +522,7 @@ Remaining: 70% riding to TP`
     await hyperliquid_market_close({ coin: position.coin, size: close_size })
 
     partials_taken.p75 = true
-    SESSION[partials_key] = partials_taken
+    SESSION.partials_taken[partials_key] = partials_taken
 
     await telegram_send_message({
       chat_id: TELEGRAM_CHAT_ID,

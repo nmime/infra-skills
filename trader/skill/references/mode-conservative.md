@@ -273,7 +273,7 @@ if (drawdown_check.halt) {
 // 3. Manage dynamic stops and partial takes
 for (const position of positions) {
   await manage_dynamic_stop(position, 'conservative')
-  await manage_partial_takes(position, 'conservative')
+  await manage_partial_takes(position, 5)  // tp_pct = 5% for conservative
 }
 
 // 4. Report to Telegram
