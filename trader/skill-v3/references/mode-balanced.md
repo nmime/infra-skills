@@ -184,8 +184,11 @@ await splox_kv_set({ key: `${chat_id}_session`, value: JSON.stringify(session) }
 ### Step 6: Schedule (Adaptive)
 
 ```javascript
-const interval = await get_scan_interval('balanced')
-schedule({ subscription_id, delay: interval, message: "balanced scan" })
+const { interval, reason } = await get_scan_interval('balanced')
+const next_scan = format_interval(interval)
+schedule({ subscription_id, delay: interval, message: `balanced scan (${reason})` })
+
+notify('balanced', 'scan', { pos: positions.length, max: 4, bal: accountValue.toFixed(2), progress: progress.progress_pct, next_scan })
 ```
 
 ## Event Handling
@@ -223,7 +226,7 @@ for (const pos of positions) {
   await manage_partial_takes(chat_id, pos, 8)
 }
 
-notify('balanced', 'scan', { pos: positions.length, max: 4, bal: accountValue.toFixed(2), progress: progress.progress_pct })
+// notify moved to LAST STEP with next_scan
 ```
 
 ### On Trade Close
@@ -265,8 +268,11 @@ Remainder runs with trail
 ### LAST STEP (NEVER SKIP)
 
 ```javascript
-const interval = await get_scan_interval('balanced')
-schedule({ subscription_id, delay: interval, message: "balanced scan" })
+const { interval, reason } = await get_scan_interval('balanced')
+const next_scan = format_interval(interval)
+schedule({ subscription_id, delay: interval, message: `balanced scan (${reason})` })
+
+notify('balanced', 'scan', { pos: positions.length, max: 4, bal: accountValue.toFixed(2), progress: progress.progress_pct, next_scan })
 ```
 
 ## Cleanup

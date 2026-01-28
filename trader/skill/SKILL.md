@@ -509,9 +509,26 @@ async function get_scan_interval(mode) {
   const btc = await hyperliquid_get_candles({ coin: 'BTC', interval: '1h', limit: 2 })
   const volatility = Math.abs((btc[1].close - btc[0].close) / btc[0].close * 100)
 
-  if (volatility > 3) return intervals.volatile    // High vol: scan faster
-  if (volatility < 0.5) return intervals.quiet     // Low vol: scan slower
-  return intervals.base                             // Normal: base interval
+  let interval, reason
+  if (volatility > 3) {
+    interval = intervals.volatile
+    reason = 'high_vol'
+  } else if (volatility < 0.5) {
+    interval = intervals.quiet
+    reason = 'low_vol'
+  } else {
+    interval = intervals.base
+    reason = 'normal'
+  }
+
+  return { interval, reason, volatility }
+}
+
+function format_interval(seconds) {
+  if (seconds >= 86400) return `${(seconds / 86400).toFixed(0)}d`
+  if (seconds >= 3600) return `${(seconds / 3600).toFixed(0)}h`
+  if (seconds >= 60) return `${(seconds / 60).toFixed(0)}m`
+  return `${seconds}s`
 }
 ```
 
@@ -597,10 +614,10 @@ function select_params(mode, confidence) {
 const NOTIFICATIONS = {
   degen: {
     start: "🎰 DEGEN MODE | $${bal} → $${target} (+${pct}%) | LFG",
-    entry: "🎰 YOLO ${dir} ${coin} @ $${price} | ${lev}x | TP $${tp} SL $${sl}",
+    entry: "🎰 ${dir} ${coin} @ $${price} | ${lev}x | TP $${tp} SL $${sl}",
     win: "💰 ${coin} PRINTED +$${pnl} (+${pct}%) | $${bal} | ${progress}% to target",
     loss: "💀 ${coin} REKT -$${pnl} (${pct}%) | $${bal} | ${progress}% to target",
-    scan: "👀 Scanning for plays... | ${pos}/${max} positions | $${bal}",
+    scan: "👀 Scanning | ${pos}/${max} pos | $${bal} | Next: ${next_scan}",
     trail: "🔥 ${coin} MOONING +${pnl}% | Trailing at +${locked}%",
     target: "🎉🎰 TARGET HIT! $${start} → $${final} (+${ret}%) | WAGMI"
   },
@@ -609,7 +626,7 @@ const NOTIFICATIONS = {
     entry: "🟢 ${dir} ${coin} @ $${price} | ${lev}x | TP $${tp} SL $${sl}",
     win: "✅ ${coin} +$${pnl} (+${pct}%) | $${bal} | ${progress}% to target",
     loss: "❌ ${coin} -$${pnl} (${pct}%) | $${bal} | ${progress}% to target",
-    scan: "🔍 Scanning | ${pos}/${max} | $${bal}",
+    scan: "🔍 Scanning | ${pos}/${max} | $${bal} | Next: ${next_scan}",
     trail: "🔒 ${coin} +${pnl}% | Trailing at +${locked}%",
     target: "🎉 TARGET! $${start} → $${final} (+${ret}%)"
   },
@@ -618,7 +635,7 @@ const NOTIFICATIONS = {
     entry: "📊 ${dir} ${coin} @ $${price} | ${lev}x | R:R ${rr}",
     win: "✅ ${coin} +$${pnl} (+${pct}%) | $${bal} | ${progress}%",
     loss: "❌ ${coin} -$${pnl} (${pct}%) | $${bal}",
-    scan: "📊 Portfolio: ${pos}/${max} | $${bal} | ${progress}%",
+    scan: "📊 Portfolio: ${pos}/${max} | $${bal} | ${progress}% | Next: ${next_scan}",
     trail: "🔒 ${coin} secured at +${locked}%",
     target: "🎯 Target reached: $${start} → $${final} (+${ret}%)"
   },
@@ -627,7 +644,7 @@ const NOTIFICATIONS = {
     entry: "🛡️ ${dir} ${coin} @ $${price} | ${lev}x | Safe entry",
     win: "✓ ${coin} +$${pnl} (+${pct}%)",
     loss: "✗ ${coin} -$${pnl} (${pct}%)",
-    scan: "📅 3-Day Check | ${pos}/${max} | Cash: ${cash}%",
+    scan: "📅 Check | ${pos}/${max} | Cash: ${cash}% | Next: ${next_scan}",
     trail: "🔒 ${coin} protected at +${locked}%",
     target: "🏆 Annual target: $${start} → $${final} (+${ret}%)"
   }

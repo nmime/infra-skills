@@ -168,8 +168,12 @@ const { subscription_id } = await event_subscribe({
 ### Step 6: Schedule (Adaptive)
 
 ```javascript
-const interval = await get_scan_interval('conservative')
-schedule({ subscription_id, delay: interval, message: "3-day scan" })
+const { interval, reason } = await get_scan_interval('conservative')
+const next_scan = format_interval(interval)
+schedule({ subscription_id, delay: interval, message: `conservative scan (${reason})` })
+
+const cash_pct = (100 - totalMarginUsed/accountValue*100).toFixed(0)
+notify('conservative', 'scan', { pos: positions.length, max: 6, cash: cash_pct, next_scan })
 ```
 
 ## Event Handling
@@ -187,8 +191,7 @@ for (const pos of positions) {
   }
 }
 
-const cash_pct = (100 - totalMarginUsed/accountValue*100).toFixed(0)
-notify('conservative', 'scan', { pos: positions.length, max: 6, cash: cash_pct })
+// notify moved to LAST STEP with next_scan
 ```
 
 ### On Trade Close
@@ -218,8 +221,12 @@ Remainder runs with trail
 ### LAST STEP (NEVER SKIP)
 
 ```javascript
-const interval = await get_scan_interval('conservative')
-schedule({ subscription_id, delay: interval, message: "3-day scan" })
+const { interval, reason } = await get_scan_interval('conservative')
+const next_scan = format_interval(interval)
+schedule({ subscription_id, delay: interval, message: `conservative scan (${reason})` })
+
+const cash_pct = (100 - totalMarginUsed/accountValue*100).toFixed(0)
+notify('conservative', 'scan', { pos: positions.length, max: 6, cash: cash_pct, next_scan })
 ```
 
 ## Cleanup

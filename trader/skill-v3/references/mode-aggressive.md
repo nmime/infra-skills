@@ -182,8 +182,11 @@ await splox_kv_set({ key: `${chat_id}_session`, value: JSON.stringify(session) }
 ### Step 6: Schedule (Adaptive)
 
 ```javascript
-const interval = await get_scan_interval('aggressive')
-schedule({ subscription_id, delay: interval, message: "aggressive scan" })
+const { interval, reason } = await get_scan_interval('aggressive')
+const next_scan = format_interval(interval)
+schedule({ subscription_id, delay: interval, message: `aggressive scan (${reason})` })
+
+notify('aggressive', 'scan', { pos: positions.length, max: 3, bal: accountValue.toFixed(2), next_scan })
 ```
 
 ## Event Handling
@@ -221,7 +224,7 @@ for (const pos of positions) {
   await manage_partial_takes(chat_id, pos, 12)
 }
 
-notify('aggressive', 'scan', { pos: positions.length, max: 3, bal: accountValue.toFixed(2) })
+// notify moved to LAST STEP with next_scan
 ```
 
 ### On Trade Close
@@ -265,8 +268,11 @@ Remainder runs with trail
 ### LAST STEP (NEVER SKIP)
 
 ```javascript
-const interval = await get_scan_interval('aggressive')
-schedule({ subscription_id, delay: interval, message: "aggressive scan" })
+const { interval, reason } = await get_scan_interval('aggressive')
+const next_scan = format_interval(interval)
+schedule({ subscription_id, delay: interval, message: `aggressive scan (${reason})` })
+
+notify('aggressive', 'scan', { pos: positions.length, max: 3, bal: accountValue.toFixed(2), next_scan })
 ```
 
 ## Cleanup
