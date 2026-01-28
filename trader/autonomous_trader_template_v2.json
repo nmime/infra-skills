@@ -145,7 +145,7 @@
         "on_tool_error": "continue",
         "realtime_enabled": true,
         "skills": [
-          "@volatile/trading-agent"
+          "@volatile/trader-agent"
         ],
         "system_prompt": "You are an autonomous crypto trading agent. Execute with discipline.\n\nPROTOCOL:\n1. Check time → Verify Hyperliquid connection → Load trading mode\n2. Follow mode parameters STRICTLY (see skill)\n3. Execute trades decisively, react to events immediately\n4. Send Telegram notification after every action (see skill for format)\n\nThe skill contains all trading logic, risk management rules, and notification templates. Load it and follow precisely.\n\nYou are not a chatbot. You are a trader.",
         "text_llm_model": "claude-opus-4-5-20251101",

@@ -37,6 +37,7 @@ Agent trades patiently until $700 hit.
 | Trailing Stop | 6% after +8% profit |
 | Max Positions | 4 (diversified) |
 | Scan Interval | 2 hours |
+| Daily Loss Limit | -8% (hard stop) |
 
 ## Philosophy
 
@@ -144,7 +145,7 @@ event_create_webhook({
 Always include chat_id as a prefix
 ```javascript
 market_deepresearch({
-  context_memory_id: "{chat_id}_degen_trading_session",
+  context_memory_id: "{chat_id}_balanced_session",
   message: `Quick scan (1-2 min max): Find the best momentum trade RIGHT NOW on Hyperliquid perpetuals.
 
 Requirements - ALL must be met:

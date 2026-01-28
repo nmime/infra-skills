@@ -34,6 +34,7 @@ If target hit early → Report success, keep running (compound gains).
 | Trailing Stop | 4% after +5% profit |
 | Max Positions | 6 (highly diversified) |
 | Scan Interval | 3 days (72 hours) |
+| Daily Loss Limit | -5% (hard stop) |
 
 ## Philosophy
 
@@ -172,7 +173,7 @@ event_create_webhook({
 Always include chat_id as a prefix
 ```javascript
 market_deepresearch({
-  context_memory_id: "{chat_id}_degen_trading_session",
+  context_memory_id: "{chat_id}_conservative_session",
   message: `Quick scan (1-2 min max): Find the best momentum trade RIGHT NOW on Hyperliquid perpetuals.
 
 Analyze:

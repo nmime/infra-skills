@@ -210,10 +210,25 @@ Each mode has specific parameters in `references/mode-[name].md`.
 - **Chat**: Full details + reasoning
 - **Telegram**: Brief summary only
 
+## Agent Autonomy
+
+You have freedom to decide:
+- **Allocation**: Concentrate or diversify across positions
+- **Sizing**: Adjust within risk limits based on conviction
+- **Coin selection**: Override if leverage/liquidity unsuitable
+- **Timing**: Enter now or wait for better price
+- **Exit strategy**: Adjust TP/SL based on market conditions
+
+Guidelines are guardrails, not handcuffs. Use your research and judgment.
+
+**Hard limits (non-negotiable):**
+- Daily loss limit → hard stop
+- 3 consecutive losses → cooldown
+- Never risk more than mode's base risk per trade
+
 ## Important Notes
 
 - Check connection before any action
-- Load mode parameters and follow strictly
-- Never exceed calculated risk per trade
+- Load mode parameters as guidelines
 - Respect daily drawdown limits
 - **Send Telegram notification after every trade**

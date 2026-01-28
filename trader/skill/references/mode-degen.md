@@ -25,7 +25,7 @@ Minimum target: **+100% (2x)** — never lower.
 | Stop Loss | 1.5× ATR (volatility-adjusted) |
 | Take Profit | 3× ATR (minimum 1:2 R:R) |
 | Trailing Stop | 1× ATR after 2× ATR profit |
-| Max Positions | 2 (focused) |
+| Max Positions | 2 (agent decides: concentrate or diversify) |
 | Scan Interval | 10 minutes |
 | Daily Loss Limit | -20% (hard stop) |
 | Consecutive Loss Limit | 3 (then cooldown) |
@@ -305,7 +305,7 @@ if (positions.length >= 2) {
 ```javascript
 market_deepresearch({
   context_memory_id: "{chat_id}_degen_session",
-  message: `RAPID SCAN (1 min): Find the best momentum trade NOW on Hyperliquid.
+  message: `RAPID SCAN (1 min): Find the best momentum trades NOW on Hyperliquid.
 
 SCAN FOR:
 1. Top movers in last 1-4 hours (biggest % moves)
@@ -317,13 +317,24 @@ REQUIREMENTS:
 - Must be on Hyperliquid perps
 - Clear momentum direction
 - Recent catalyst or technical breakout
+- CHECK MAX LEVERAGE AVAILABLE (need 15x+ for degen mode)
 
-OUTPUT:
+OUTPUT (up to 2 trades for diversification):
+For EACH opportunity:
 - Coin symbol
+- Max leverage available on Hyperliquid
 - Direction (LONG or SHORT)
 - Entry reason (catalyst + momentum)
 - Confidence (1-10, need 5+ to trade)
-- Current funding rate sentiment
+- Current funding rate
+
+MULTI-POSITION GUIDANCE:
+If 2+ setups found, YOU DECIDE:
+- Go all-in on best setup (higher risk, higher reward)
+- Split across setups (lower risk, diversified)
+- Choose allocation % based on your conviction
+
+Trust your research. Make the call.
 
 Current funding bias: ` + FUNDING_BIAS + `
 Account status: ` + DAILY_PNL_PCT + `% today`
@@ -333,9 +344,18 @@ Account status: ` + DAILY_PNL_PCT + `% today`
 ### Step 4: Validate Coin & Calculate ATR
 
 ```javascript
-// Get coin metadata
+// Get coin metadata - CHECK LEVERAGE FIRST
 hyperliquid_get_meta({ coin: "COIN" })
 MAX_LEVERAGE = meta.maxLeverage
+
+// LEVERAGE CHECK - Agent decides how to handle
+if (MAX_LEVERAGE < 15) {
+  "⚠️ " + COIN + " max leverage: " + MAX_LEVERAGE + "x"
+  // Agent decides:
+  // - Proceed anyway if setup is strong (funding edge, catalyst)
+  // - Skip and find higher-leverage alternative
+  // - Use max available and adjust expectations
+}
 
 // Get current price
 hyperliquid_get_all_prices({ coins: ["COIN"] })
@@ -346,7 +366,6 @@ hyperliquid_get_funding_rates({ coin: "COIN" })
 FUNDING_RATE = funding.rate
 
 // Calculate ATR (approximate using recent price data)
-// In practice, fetch OHLC data and calculate 14-period ATR
 ATR_PCT = estimated_volatility  // e.g., 2-5% for volatile coins
 
 // Volatility regime
@@ -358,6 +377,44 @@ if (ATR_PCT > 5) {
 } else {
   volatility_factor = 1.0
 }
+
+// Adjust leverage to what's available
+LEVERAGE = Math.min(MAX_LEVERAGE, 50)
+LEVERAGE = Math.max(LEVERAGE, 15)  // Prefer 15x+ for degen
+if (MAX_LEVERAGE < 15) {
+  LEVERAGE = MAX_LEVERAGE  // Use max if below threshold
+  "📊 Using " + LEVERAGE + "x (coin max)"
+}
+```
+
+### Step 4b: Position Strategy (Agent Decides)
+
+```javascript
+// Agent has full autonomy on allocation strategy
+// Options when multiple setups found:
+
+// OPTION A: Concentrate (max conviction play)
+if (SETUP_1.confidence >= 8) {
+  "Going all-in on " + SETUP_1.coin + " - highest conviction"
+  ALLOCATION = 1.0
+}
+
+// OPTION B: Diversify (spread risk)
+if (want_diversification) {
+  "Splitting across " + SETUP_1.coin + " and " + SETUP_2.coin
+  // Agent chooses split ratio based on confidence gap
+}
+
+// OPTION C: Sequential (one now, one later)
+if (prefer_sequential) {
+  "Starting with " + SETUP_1.coin + ", will add " + SETUP_2.coin + " on next scan"
+}
+
+// Agent makes the call based on:
+// - Confidence levels
+// - Correlation between coins
+// - Current market conditions
+// - Gut feeling from research
 ```
 
 ### Step 5: Calculate Position Size (Half-Kelly)
@@ -375,8 +432,11 @@ STOP_DISTANCE_PCT = Math.min(ATR_PCT * 1.5, (100 / LEVERAGE) * 0.6)
 // Position size from risk
 MARGIN = RISK_AMOUNT / (STOP_DISTANCE_PCT / 100)
 
-// Cap at max position size (50% of account)
-MARGIN = Math.min(MARGIN, accountValue * 0.50)
+// Position size cap - agent can adjust based on conviction
+MAX_MARGIN_PCT = 0.50  // Guideline: 50% max per position
+// Agent may go higher (up to 80%) for very high conviction plays
+// Agent may go lower for uncertain setups
+MARGIN = Math.min(MARGIN, accountValue * MAX_MARGIN_PCT)
 
 // Calculate actual position (25-50x for degen)
 LEVERAGE = Math.min(MAX_LEVERAGE, 50)

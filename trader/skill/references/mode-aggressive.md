@@ -25,7 +25,7 @@ Minimum target: **+50%** — never lower.
 | Stop Loss | 2× ATR (volatility-adjusted) |
 | Take Profit | 4× ATR (minimum 2:1 R:R) |
 | Trailing Stop | 1.5× ATR after 3× ATR profit |
-| Max Positions | 3 (diversified focus) |
+| Max Positions | 3 (agent decides allocation strategy) |
 | Scan Interval | 20 minutes |
 | Daily Loss Limit | -12% (hard stop) |
 | Consecutive Loss Limit | 3 (then cooldown) |
@@ -344,15 +344,25 @@ CHECK:
 - Recent price action (momentum confirmation)
 - Volume (should be above average)
 
-OUTPUT:
+OUTPUT (up to 3 trades for diversification):
+For EACH opportunity:
 - Coin symbol (top 50 preferred)
+- Max leverage available
 - Direction (LONG or SHORT)
 - Trend confirmation (which timeframes aligned)
 - Entry reason (technical + catalyst if any)
 - Confidence (1-10, need 6+ to trade)
 
+MULTI-POSITION GUIDANCE:
+If multiple setups found, YOU DECIDE:
+- Concentrate on best (high conviction)
+- Spread across 2-3 (diversify risk)
+- Choose your own allocation ratios
+
+Use your judgment. You've done the research.
+
 Current positions: ` + JSON.stringify(positions) + `
-Avoid same coins for diversification.
+Avoid same coins.
 Account status: ` + DAILY_PNL_PCT.toFixed(1) + `% today`
 })
 ```
