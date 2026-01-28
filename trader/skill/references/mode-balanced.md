@@ -233,26 +233,27 @@ hyperliquid_place_bracket_order({
 
 ```javascript
 // Subscribe Hyperliquid to send events to Event Hub
-// Include ALL coins in portfolio
+// Note: If multiple coins, duplicate this call for each coin
 hyperliquid_subscribe_webhook({
   webhook_url: WEBHOOK_URL,
-  coins: ["COIN1", "COIN2", "COIN3", "COIN4"],  // All positions
+  coins: ["COIN"],
   events: ["fills", "orders"],
   position_alerts: [
-    { condition: "pnl_pct_gt", value: 6 },   // Early profit alert
-    { condition: "pnl_pct_lt", value: -2 }   // Early loss alert
+    { coin: "COIN", condition: "pnl_pct_gt", value: 6 },
+    { coin: "COIN", condition: "pnl_pct_lt", value: -2 }
   ]
 })
 
-// Subscribe to Event Hub
+// Subscribe to Event Hub to wake up on events
 event_subscribe({
   webhook_id: WEBHOOK_ID,
-  timeout: 86400,
+  timeout: 86400,  // 24 hours
   triggers: [
     { name: "trade_events", filter: "payload.type == 'fill' || payload.type == 'order'", debounce: 5 },
     { name: "position_alerts", filter: "payload.type == 'position_alert'", debounce: 5 }
   ]
 })
+// Save subscription_id
 ```
 
 ### Step 6: Schedule Periodic Scans

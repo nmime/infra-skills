@@ -272,9 +272,10 @@ hyperliquid_place_bracket_order({
 
 ```javascript
 // Subscribe for all positions
+// Note: If multiple coins, duplicate this call for each coin
 hyperliquid_subscribe_webhook({
   webhook_url: WEBHOOK_URL,
-  coins: POSITION_COINS,
+  coins: ["COIN"],
   events: ["fills", "orders"],
   position_alerts: [
     { condition: "pnl_pct_gt", value: 4 },   // Early profit

@@ -495,26 +495,28 @@ TOTAL_TRADES++
 ### Step 7: Setup Monitoring
 
 ```javascript
-// Subscribe Hyperliquid events
+// Subscribe Hyperliquid to send events to Event Hub
+// Note: If multiple coins, duplicate this call for each coin
 hyperliquid_subscribe_webhook({
   webhook_url: WEBHOOK_URL,
-  coins: [COIN],
+  coins: ["COIN"],
   events: ["fills", "orders"],
   position_alerts: [
-    { coin: COIN, condition: "pnl_pct_gt", value: STOP_DISTANCE_PCT * 2 },  // TP zone
-    { coin: COIN, condition: "pnl_pct_lt", value: -STOP_DISTANCE_PCT * 0.5 }  // Early warning
+    { coin: "COIN", condition: "pnl_pct_gt", value: 10 },
+    { coin: "COIN", condition: "pnl_pct_lt", value: -5 }
   ]
 })
 
-// Subscribe to Event Hub
+// Subscribe to Event Hub to wake up on events
 event_subscribe({
   webhook_id: WEBHOOK_ID,
-  timeout: 86400,
+  timeout: 86400,  // 24 hours
   triggers: [
-    { name: "trade_events", filter: "payload.type == 'fill' || payload.type == 'order'", debounce: 3 },
-    { name: "position_alerts", filter: "payload.type == 'position_alert'", debounce: 3 }
+    { name: "trade_events", filter: "payload.type == 'fill' || payload.type == 'order'", debounce: 5 },
+    { name: "position_alerts", filter: "payload.type == 'position_alert'", debounce: 5 }
   ]
 })
+// Save subscription_id
 ```
 
 ### Step 8: Schedule Fast Scans
