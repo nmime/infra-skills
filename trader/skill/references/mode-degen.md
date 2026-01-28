@@ -20,20 +20,20 @@ scan: 10min base (5min volatile, 20min quiet)
 daily_limit: -15%
 confidence_min: 5
 
-risk_profile: High Risk (ALL checks apply - smaller penalties)
+risk_profile: High Risk (NOT YOLO - all checks apply)
   btc_check: penalty -1 (not skip)
   funding_check: penalty -1 (not skip)
   time_filter: size x0.85 off-hours
 
 progressive_trailing:
-  +10% profit → 8% trail
-  +15% profit → 5% trail
+  +10% profit → 8% trail (breathing room)
+  +15% profit → 5% trail (tightening)
   +20% profit → 3% trail (lock gains)
 
 partial_takes:
-  +10% (50% TP) → take 30%
-  +15% (75% TP) → take 30%
-  remainder → trail
+  50% of TP (+10%) → take 30%
+  75% of TP (+15%) → take 30%
+  remainder → runs with trail
 ```
 
 ## Setup
@@ -69,7 +69,7 @@ market_deepresearch({
 2. Breaking news/catalysts
 3. Extreme funding rates
 
-Need: coin, direction, why, confidence (1-10). Shitcoins welcome. YOLO plays ok.`
+Need: coin, direction, why, confidence (1-10). High-beta coins ok. Momentum plays preferred.`
 })
 ```
 
@@ -81,19 +81,27 @@ hyperliquid_get_all_prices({ coins: [coin] })
 hyperliquid_get_funding_rates({ coin })
 ```
 
-### Step 3b: Pre-Trade Checks (MINIMAL - Degen skips most)
+### Step 3b: Pre-Trade Checks (ALL checks apply - smaller penalties)
 
 ```javascript
-// Only check: coin exists + basic liquidity
+// Liquidity check (required for all modes)
 const liq = await check_liquidity(coin, margin, 'degen')
 if (!liq.ok) return SKIP
 
-// NO BTC check (skip_btc_check: true)
-// NO time filter (skip_time_filter: true)
-// NO funding check (skip_funding_check: true)
+// BTC alignment (penalty, not skip - degen takes more risk)
+const btc = await check_btc_alignment(coin, direction)
+confidence += btc.aligned ? 0 : -1  // Small penalty
+
+// Funding rate (penalty, not skip)
+const funding = await check_funding_edge(coin, direction)
+confidence += funding.confidence_penalty > 0 ? 0 : -1
+
+// Time filter (size reduction, not skip)
+const time = check_trading_conditions()
+let size_mult = time.is_weekend || time.is_asia_night ? 0.85 : 1.0
 
 if (confidence < 5) {
-  notify('degen', 'scan', { pos: positions.length, max: 2, bal: accountValue })
+  notify('degen', 'scan', { pos: positions.length, max: 3, bal: accountValue })
   return SKIP
 }
 ```
@@ -109,7 +117,7 @@ const leverage = Math.min(maxLeverage, 25)
 hyperliquid_update_leverage({ coin, leverage, is_cross: true })
 
 const price = await hyperliquid_get_price(coin)
-const margin = accountValue * 0.25
+const margin = accountValue * 0.25 * size_mult
 const size = calculate_size(margin, leverage, price)
 
 const sl_pct = 10, tp_pct = 20
@@ -206,10 +214,16 @@ if (positions.length < 3) // research new trade
 ### On Position Alert
 
 ```
-+5%  → breakeven (-0.3%)
-+10% → +5% locked
-+15% → +10% locked
-+20% → trail 5% below max
+Progressive Trailing (tighten as profit grows):
++5%  → move SL to breakeven (-0.3%)
++10% → trail 8% (breathing room)
++15% → trail 5% (tightening)
++20% → trail 3% (lock gains)
+
+Partials:
++10% (50% of TP) → take 30% profit
++15% (75% of TP) → take 30% profit
+Remainder runs with trail
 ```
 
 ### LAST STEP (NEVER SKIP)

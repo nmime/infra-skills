@@ -76,7 +76,7 @@ market_deepresearch({
 2. Breaking news/catalysts
 3. Extreme funding rates
 
-Need: coin, direction, why, confidence (1-10). Shitcoins welcome. YOLO plays ok.`
+Need: coin, direction, why, confidence (1-10). High-beta coins ok. Momentum plays preferred.`
 })
 ```
 

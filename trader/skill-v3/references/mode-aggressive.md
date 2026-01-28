@@ -12,18 +12,28 @@ target: +50% to +100% based on account size
 
 leverage: 5-15x (max 15x)
 position: 15% of account
+risk_per_trade: 3% max
 sl: -6%
 tp: +12% (min 2x SL)
-trailing: 4% distance after +15% profit
 max_positions: 3
 scan: 20min base (10min volatile, 40min quiet)
 daily_limit: -10%
 confidence_min: 6
 
-risk_profile: High
-  check_btc: true (penalty, not hard skip)
-  check_funding: true (penalty)
-  check_time: true (size reduction)
+risk_profile: Moderate-High
+  btc_check: penalty -2 (not skip)
+  funding_check: penalty -1 (not skip)
+  time_filter: size x0.75 off-hours
+
+progressive_trailing:
+  +6% profit → 6% trail
+  +10% profit → 4% trail
+  +15% profit → 3% trail (lock gains)
+
+partial_takes:
+  +6% (50% TP) → take 30%
+  +9% (75% TP) → take 30%
+  remainder → trail
 ```
 
 ## Setup
@@ -241,10 +251,15 @@ if (positions.length < 3) // research new trade
 ### On Position Alert
 
 ```
-+5%  → breakeven (-0.3%)
-+8%  → +4% locked
-+12% → +8% locked
-+15% → trail 4% below max
+Progressive Trailing (tighten as profit grows):
++6%  → trail 6% (move SL to breakeven)
++10% → trail 4% (tighten)
++15% → trail 3% (lock gains)
+
+Partials:
++6% (50% TP) → take 30% profit
++9% (75% TP) → take 30% profit
+Remainder runs with trail
 ```
 
 ### LAST STEP (NEVER SKIP)

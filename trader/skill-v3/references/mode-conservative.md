@@ -10,22 +10,31 @@ target: +20% annually
 
 leverage: 1-2x
 position: 6% of account
+risk_per_trade: 1% max (safest)
 sl: -2.5%
 tp: +5% (min 2x SL)
-trailing: 2% distance after +6% profit
 max_positions: 6
 max_margin: 60% (keep 40% cash)
 scan: 3d base (1d volatile, 5d quiet)
 daily_limit: -5%
 confidence_min: 8
-btc_alignment: REQUIRED
-weekend_trading: DISABLED
 
-risk_profile: Capital Preservation
-  btc_alignment: REQUIRED (hard skip)
-  funding_check: STRICT (hard skip if against)
-  weekend_trading: false
+risk_profile: Capital Preservation (strictest)
+  btc_check: REQUIRED (hard skip)
+  funding_check: REQUIRED (hard skip)
+  weekend_trading: DISABLED
+  time_filter: size x0.50 off-hours
   allowed_coins: BTC, ETH, SOL, BNB, XRP, ADA, AVAX, DOGE, LINK, DOT
+
+progressive_trailing:
+  +2.5% profit → 3% trail
+  +4% profit → 2% trail
+  +6% profit → 1.5% trail (lock gains)
+
+partial_takes:
+  +2.5% (50% TP) → take 30%
+  +3.75% (75% TP) → take 30%
+  remainder → trail
 ```
 
 ## Allowed Coins
@@ -286,9 +295,15 @@ if (accountValue >= session.target_balance) {
 ### On Position Alert
 
 ```
-+2.5% → breakeven (-0.1%)
-+4%   → +2% locked
-+6%   → trail 2% below max
+Progressive Trailing:
++2.5% → trail 3% (move SL to small profit)
++4%   → trail 2% (tighten)
++6%   → trail 1.5% (lock gains)
+
+Partials:
++2.5% (50% TP) → take 30% profit
++3.75% (75% TP) → take 30% profit
+Remainder runs with trail
 ```
 
 ### LAST STEP (NEVER SKIP)
