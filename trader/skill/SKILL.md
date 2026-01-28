@@ -17,7 +17,29 @@ The agent operates in cycles:
 
 ## Setup Flow
 
-### On ANY User Message
+### Step 0: Get Telegram Chat ID (once per conversation)
+
+First message in any conversation, ask for Telegram:
+
+```
+To send you trade notifications, I need your Telegram chat ID.
+
+How to find it:
+1. Message @userinfobot on Telegram
+2. It will reply with your chat ID (a number like 123456789)
+
+Your Telegram chat ID:
+```
+
+Save as `TELEGRAM_CHAT_ID` for all notifications.
+
+If user says "skip" or "no" → `TELEGRAM_CHAT_ID = null` (no notifications).
+
+Only ask once. Remember for entire conversation.
+
+---
+
+### On ANY Trading Message
 
 **Step 1: Check if Hyperliquid is connected**
 
@@ -31,27 +53,20 @@ SPLOX_SEARCH_TOOLS(query: "hyperliquid")
 Show connection instructions:
 
 ```
-Let's set up your autonomous trading agent!
-
 To trade on Hyperliquid, you need to connect an agent wallet.
-
-SETUP STEPS:
 
 1. Create an Agent Wallet (if you don't have one)
    - Go to: https://app.hyperliquid.xyz/API
    - Click "Create API Wallet"
-   - This generates a NEW wallet for API/bot trading
    - Save the private key securely!
 
 2. Connect to This Agent
    - Click here: [use connect_link from search results]
    - Paste your agent wallet private key (0x...)
-   - Your key is encrypted and stored securely
 
 SECURITY:
    - NEVER use your main wallet private key
-   - Agent wallet can trade using your main wallet's funds
-   - Agent wallet CANNOT withdraw (only trade)
+   - Agent wallet can trade but CANNOT withdraw
    - You control funds from your main wallet
 
 Let me know when you're done!
@@ -88,43 +103,26 @@ SPLOX_EXECUTE_TOOL(
 
 **Step 3: Show Account Status**
 
-Display the account information using this exact format with line breaks:
-
 ```
-Your Hyperliquid agent wallet is connected!
-
 ACCOUNT STATUS
 
-Agent Wallet:
-[address]
-
-Balance:
-$[accountValue]
-
-Positions:
-[numberOfPositions]
-
-Orders:
-[numberOfOrders]
-
-Margin Used:
-$[totalMarginUsed]
-
-Withdrawable:
-$[withdrawable]
+Agent Wallet: [address]
+Balance: $[accountValue]
+Positions: [numberOfPositions]
+Orders: [numberOfOrders]
+Margin Used: $[totalMarginUsed]
+Withdrawable: $[withdrawable]
 ```
 
 **Step 4: Ask for Trading Mode**
-
-After showing account status, ask user to select a trading mode:
 
 ```
 Which trading mode?
 
 1. Conservative - 1-2x leverage, +20%/year target
 2. Balanced - 3-7x leverage, +25-50% target
-3. Aggressive - 15-25x leverage, +50-100% target
-4. Degen - 25-50x leverage, +100-300% target
+3. Aggressive - 10-20x leverage, +50-100% target
+4. Degen - max leverage, +100-300% target
 
 Choose (1-4):
 ```
@@ -179,26 +177,81 @@ Each mode has specific parameters in `references/mode-[name].md`.
 ## Telegram Notifications
 
 **MUST send to Telegram** after every trade action using:
-- chat_id: `305544740` (FIXED, not session ID)
+- chat_id: `TELEGRAM_CHAT_ID` (provided by user at start)
 - parse_mode: `Markdown`
 
-### Message Format (send to Telegram)
+### Message Templates
 
+**Session Start:**
 ```
-// Entry - ALWAYS include Next scan time
-🟢 LONG {COIN} @ ${ENTRY} | {LEV}x | Next: {SCAN_INTERVAL}
+🚀 *{MODE} Mode Started*
+Balance: ${BALANCE}
+Target: ${TARGET} (+{PCT}%)
+Scan: every {SCAN_INTERVAL}
+```
 
-// Exit - Win
-✅ {COIN} +${PNL} (+{PCT}%) | Next: {SCAN_INTERVAL}
+**Entry:**
+```
+🟢 *{DIRECTION} {COIN}* @ ${ENTRY}
+Leverage: {LEV}x | Size: ${SIZE}
+TP: ${TP} | SL: ${SL}
 
-// Exit - Loss
-❌ {COIN} -${PNL} | Next: {SCAN_INTERVAL}
+📝 {REASON}
 
-// Scan - No trade
-🔍 No setup | Next: {SCAN_INTERVAL}
+Next: {SCAN_INTERVAL}
+```
 
-// Target hit
-🎉 TARGET! +{RETURN}%
+**Exit - Win:**
+```
+✅ *{COIN} +${PNL}* (+{PCT}%)
+Entry: ${ENTRY} → Exit: ${EXIT}
+Balance: ${BALANCE} ({PROGRESS}% to target)
+
+Next: {SCAN_INTERVAL}
+```
+
+**Exit - Loss:**
+```
+❌ *{COIN} -${PNL}* ({PCT}%)
+Entry: ${ENTRY} → Exit: ${EXIT}
+Balance: ${BALANCE}
+
+Next: {SCAN_INTERVAL}
+```
+
+**Scan - No Trade:**
+```
+🔍 Scan complete - no setup found
+Reason: {WHY_NO_TRADE}
+Positions: {POS}/{MAX}
+Balance: ${BALANCE}
+
+Next: {SCAN_INTERVAL}
+```
+
+**Position Alert:**
+```
+📊 *{COIN}* {PNL_PCT}%
+Current: ${PRICE} | Entry: ${ENTRY}
+{ACTION_TAKEN}
+```
+
+**Target Reached:**
+```
+🎉 *TARGET REACHED!*
+${STARTING} → ${FINAL}
+Return: +{RETURN}%
+Trades: {TOTAL} ({WINS}W/{LOSSES}L)
+Duration: {DURATION}
+```
+
+**Daily Summary (optional):**
+```
+📈 *Daily Report*
+Balance: ${BALANCE} ({DAY_CHANGE}%)
+Open: {POSITIONS} positions
+Today: {TRADES} trades ({WINS}W/{LOSSES}L)
+Progress: {PROGRESS}% to target
 ```
 
 **{SCAN_INTERVAL}** values:
@@ -207,9 +260,31 @@ Each mode has specific parameters in `references/mode-[name].md`.
 - Balanced: `2hr`
 - Conservative: `3d`
 
-### Output Rule
-- **Chat**: Full details + thesis
-- **Telegram**: Brief summary with Next scan time (REQUIRED)
+### What to Report
+
+| Event | Report |
+|-------|--------|
+| Session start | Mode, balance, target |
+| New trade | Coin, direction, leverage, TP/SL, **reason** |
+| Trade closed | Result, P&L, new balance |
+| Scan (no trade) | Why skipped (unclear trend, low confidence, etc.) |
+| Position alert | Current P&L, any action taken |
+| Target reached | Full summary with stats |
+| Error/Issue | What happened, what agent will do |
+
+### Reason Examples
+
+Good reasons to include:
+- "BTC breaking $100k resistance, momentum confirmed"
+- "SOL oversold, funding negative, expecting bounce"
+- "ETH weak vs BTC, shorting the ratio play"
+- "DOGE memecoin pump, riding momentum"
+
+Why no trade:
+- "BTC choppy, no clear direction"
+- "All setups below 6 confidence"
+- "Funding extreme, waiting for reset"
+- "Portfolio full (3/3 positions)"
 
 ## Agent Autonomy
 
