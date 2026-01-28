@@ -138,7 +138,7 @@ Based on user's choice, read the corresponding mode reference file:
 - Mode 3: Read `references/mode-aggressive.md`
 - Mode 4: Read `references/mode-degen.md`
 
-Use the parameters from the mode file for all trading decisions.
+Each mode file contains a step-by-step setup flow. Execute every step in order — each step depends on the previous one. The monitoring and scheduling steps are what make the agent autonomous.
 
 ## Trading Modes
 
@@ -231,5 +231,6 @@ Guidelines are guardrails, not handcuffs. Use your research and judgment.
 
 - Check connection before any action
 - Load mode parameters as guidelines
+- Execute all steps from the mode file in order, none are optional
 - Respect daily drawdown limits
-- **Send Telegram notification after every trade**
+- Always verify coin's max leverage before researching it deeply
