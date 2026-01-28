@@ -199,52 +199,61 @@ schedule({
 
 ## Event Handling
 
+**CRITICAL: Every event MUST end with re-schedule. Never skip.**
+
+### On ANY Wake-up (first thing)
+
+```javascript
+// 1. Get current state
+hyperliquid_get_balance({})
+hyperliquid_get_positions({})
+
+// 2. Report ALL positions to Telegram
+telegram_send_message({
+  chat_id: TELEGRAM_CHAT_ID,
+  text: `📊 Portfolio: ${positions.length}/4
+${positions.map(p => `• ${p.coin} ${p.direction}: ${p.pnl_pct}%`).join('\n')}
+Balance: $${balance} / $${target} (${progress}% progress)`
+})
+
+// 3. Check target
+if (accountValue >= TARGET_BALANCE) {
+  cleanup()
+  STOP
+}
+```
+
 ### On Trade Event (fill/order)
 
-1. Check what happened (TP hit? SL hit?)
-2. Update portfolio tracking
-3. **Check if target reached:**
-   ```javascript
-   hyperliquid_get_balance({})
-   if (accountValue >= TARGET_BALANCE) {
-     cleanup()
-     "🎯 TARGET REACHED! $X → $Y (+Z%)"
-     STOP
-   }
-   ```
-4. If position closed → Slot opens for new trade
-5. Log result, update win/loss stats
+1. Report what happened (TP/SL hit?)
+2. If position closed → slot opens for new trade
 
 ### On Position Alert
 
-1. +6% profit → Enable trailing stop (6%)
-2. -2% loss → Monitor closely, don't panic
-3. Report portfolio status
+1. +6% → Enable trailing stop (6%)
+2. -2% → Monitor closely
 
 ### On Schedule (2hr scan)
 
-1. **Check if target reached first**
-2. Review current portfolio:
-    - How many positions?
-    - Any underperforming?
-    - Balance of LONG/SHORT?
-3. If room for new position → Research
-4. Only add if high confidence (7+) setup
-5. Re-schedule
+1. Report portfolio status (see above)
+2. If < 4 positions AND confidence 7+ setup → Research new trade
+3. Check LONG/SHORT balance
+
+### LAST STEP (every event, never skip)
 
 ```javascript
-// Portfolio status report
-"📊 Portfolio: {POS_COUNT}/{MAX_POS} positions
-  [For each position: • {COIN} {DIRECTION}: {PNL_PCT}%]
-  Balance: ${BALANCE} / ${TARGET} target ({PROGRESS}% progress)"
-
-// Re-schedule
+// Always re-schedule before ending
 schedule({
   subscription_id: SUBSCRIPTION_ID,
-  delay: 7200,
-  message: "2hr scan: Check portfolio, look for quality setups"
+  delay: 7200,  // 2 hours
+  message: "2hr scan"
 })
+
+// If schedule fails (subscription expired):
+// → Run Step 5-6 again to recreate subscription + schedule
 ```
+
+**If you don't re-schedule, the agent dies.**
 
 ## Cleanup (on stop or target reached)
 

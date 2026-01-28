@@ -215,55 +215,59 @@ schedule({
 
 ## Event Handling
 
+**CRITICAL: Every event MUST end with re-schedule. Never skip.**
+
+### On ANY Wake-up (first thing)
+
+```javascript
+// 1. Get current state
+hyperliquid_get_balance({})
+hyperliquid_get_positions({})
+
+// 2. Report to Telegram
+telegram_send_message({
+  chat_id: TELEGRAM_CHAT_ID,
+  text: `📊 3-Day Report:
+Positions: ${positions.length}/6
+Cash: ${cashPct}%
+Total P&L: ${totalPnl}%
+Annual target: $${target} (+20%)
+Progress: ${progress}%`
+})
+```
+
 ### On Trade Event (fill/order)
 
-1. Check what happened (TP hit? SL hit?)
-2. Update portfolio tracking
-3. Log result
-4. If position closed → Slot opens (but don't rush to fill)
+1. Report what happened (TP/SL hit?)
+2. If position closed → slot opens (don't rush to fill)
 
 ### On Position Alert
 
-1. +4% profit → Enable trailing stop (4%)
-2. -1.5% loss → Review, consider early exit if trend changed
-3. Report status
+1. +4% → Enable trailing stop (4%)
+2. -1.5% → Review, consider early exit
 
 ### On Schedule (3-day scan)
 
-1. **Portfolio status report:**
-   ```javascript
-   "📊 3-Day Report:
-      Positions: X/6
-      Cash: Y%
-      Total P&L: +Z%
-      Annual target: $T (+20%)
-      Progress: W%"
-   ```
+1. Report portfolio status (see above)
+2. Check quarterly milestone (Q1=90d, Q2=180d, Q3=270d, Q4=365d)
+3. If < 6 positions AND cash > 40% AND confidence 8+ → Maybe trade
+4. If unclear → Skip (that's fine for conservative)
 
-2. **Check quarterly milestone:**
-   ```javascript
-   days_elapsed = (now - START_DATE).days
-   
-   if (days_elapsed >= 90 && !Q1_CHECKED) {
-     Q1_CHECKED = true
-     "📅 Q1 Review: $X / $Q1_TARGET"
-   }
-   // ... same for Q2, Q3, Q4
-   ```
+### LAST STEP (every event, never skip)
 
-3. **Research if room for trades:**
-    - If < 6 positions AND cash > 40% → Research
-    - If confidence 8+ found → Maybe trade
-    - If unclear → Skip, that's fine
+```javascript
+// Always re-schedule before ending
+schedule({
+  subscription_id: SUBSCRIPTION_ID,
+  delay: 259200,  // 3 days
+  message: "3-day scan"
+})
 
-4. **Re-schedule:**
-   ```javascript
-   schedule({
-     subscription_id: SUBSCRIPTION_ID,
-     delay: 259200,  // 3 days
-     message: "3-day scan: Check macro conditions"
-   })
-   ```
+// If schedule fails (subscription expired):
+// → Run Step 5-6 again to recreate subscription + schedule
+```
+
+**If you don't re-schedule, the agent dies.**
 
 ## Quarterly Review
 

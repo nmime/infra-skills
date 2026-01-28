@@ -186,45 +186,62 @@ schedule({
 
 ## Event Handling
 
+**CRITICAL: Every event MUST end with re-schedule. Never skip.**
+
+### On ANY Wake-up (first thing)
+
+```javascript
+// 1. Get current state
+hyperliquid_get_balance({})
+hyperliquid_get_positions({})
+
+// 2. Report ALL positions to Telegram
+telegram_send_message({
+  chat_id: TELEGRAM_CHAT_ID,
+  text: `📊 Positions:
+${positions.map(p => `• ${p.coin} ${p.direction}: ${p.roe}% ROE`).join('\n')}
+Balance: $${balance} (${sessionChange}%)
+Progress: ${progress}% to target`
+})
+
+// 3. Check target
+if (accountValue >= TARGET_BALANCE) {
+  cleanup()
+  STOP
+}
+```
+
 ### On Trade Event (fill/order)
 
-1. Check what happened (TP hit? SL hit? Partial fill?)
-2. Update position tracking
-3. **Check if target reached:**
-   ```javascript
-   hyperliquid_get_balance({})
-   if (accountValue >= TARGET_BALANCE) {
-     // TARGET HIT!
-     cleanup()
-     "🎉 TARGET REACHED! $X → $Y (+Z%)"
-     STOP
-   }
-   ```
-4. If position closed and target NOT reached → Run Steps 2-6 to find next trade
-5. If position still open → Continue monitoring
+1. Report what happened (TP/SL hit?)
+2. If position closed → research new trade (Steps 2-4)
 
 ### On Position Alert
 
-1. Check P&L status
-2. If +12% → Add trailing stop at 10%
-3. If -4% → Watch closely, consider cutting early
-4. Report status
+1. +12% → Add trailing stop at 10%
+2. -4% → Watch closely
 
 ### On Schedule (20min scan)
 
-1. **Check if target reached first**
-2. Check current positions
-3. If < 3 positions → Run Steps 2-6 (research and open new trade)
-4. Re-schedule next scan
+1. Report position status (see above)
+2. If < 3 positions → Research new trade
+3. If 3 positions → Just monitor
+
+### LAST STEP (every event, never skip)
 
 ```javascript
-// Re-schedule for next 20min scan
+// Always re-schedule before ending
 schedule({
   subscription_id: SUBSCRIPTION_ID,
-  delay: 1200,
-  message: "20min scan: Check positions, scan for new momentum plays"
+  delay: 1200,  // 20 minutes
+  message: "20min scan"
 })
+
+// If schedule fails (subscription expired):
+// → Run Step 5-6 again to recreate subscription + schedule
 ```
+
+**If you don't re-schedule, the agent dies.**
 
 ## Cleanup (on stop or target reached)
 
