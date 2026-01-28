@@ -24,44 +24,41 @@ Autonomous Hyperliquid trading agent with persistent state via KV storage.
 ```javascript
 const MODE_CONFIG = {
   degen: {
-    leverage: 'MAX',              // Use coin's max leverage
-    position_pct: [0.30, 0.50],   // 30-50% based on confidence
-    sl_pct: [10, 15],             // 10-15%
-    tp_pct: [15, 25],             // 15-25%
-    trailing: { trigger: 20, distance: 15 },  // Trail 15% after +20%
+    leverage: [15, 25],           // 15-25x (max 25x)
+    position_pct: 0.25,           // 25% of account
+    sl_pct: 10, tp_pct: 20,
+    trailing: { trigger: 20, distance: 5 },
     confidence_min: 5,
-    scan_interval: { base: 7200, volatile: 1800, quiet: 14400 },  // 2hr/30min/4hr
+    scan_interval: { base: 600, volatile: 300, quiet: 1200 },  // 10min/5min/20min
     daily_loss_limit: 15,
-    max_positions: 2,
+    max_positions: 3,
     // Risk profile: YOLO
     skip_btc_check: true,
     skip_time_filter: true,
     skip_funding_check: true,
-    slippage: 1.0, max_spread: 1.0,
+    slippage: 0.8, max_spread: 0.5,
     min_liquidity_mult: 5
   },
   aggressive: {
-    leverage: [10, 20],           // 10-20x
-    position_pct: [0.15, 0.25],   // 15-25%
-    sl_pct: [5, 8],               // 5-8%
-    tp_pct: [12, 20],             // 12-20%
+    leverage: [5, 15],            // 5-15x (max 15x)
+    position_pct: 0.15,           // 15% of account
+    sl_pct: 6, tp_pct: 12,
     trailing: { trigger: 15, distance: 4 },
     confidence_min: 6,
-    scan_interval: { base: 3600, volatile: 1200, quiet: 7200 },  // 1hr/20min/2hr
+    scan_interval: { base: 1200, volatile: 600, quiet: 2400 },  // 20min/10min/40min
     daily_loss_limit: 10,
     max_positions: 3,
     // Risk profile: High
     skip_btc_check: false,        // Check but don't hard skip
     skip_time_filter: false,
     skip_funding_check: false,
-    slippage: 0.5, max_spread: 0.5,
+    slippage: 0.5, max_spread: 0.3,
     min_liquidity_mult: 8
   },
   balanced: {
-    leverage: [3, 7],             // 3-7x
-    position_pct: [0.08, 0.12],   // 8-12%
-    sl_pct: [3, 5],               // 3-5%
-    tp_pct: [8, 12],              // 8-12%
+    leverage: [3, 5],             // 3-5x
+    position_pct: 0.10,           // 10% of account
+    sl_pct: 4, tp_pct: 8,
     trailing: { trigger: 10, distance: 3 },
     confidence_min: 7,
     scan_interval: { base: 7200, volatile: 3600, quiet: 14400 },  // 2hr/1hr/4hr
@@ -76,9 +73,8 @@ const MODE_CONFIG = {
   },
   conservative: {
     leverage: [1, 2],             // 1-2x
-    position_pct: [0.05, 0.08],   // 5-8%
-    sl_pct: [2, 3],               // 2-3%
-    tp_pct: [5, 8],               // 5-8%
+    position_pct: 0.06,           // 6% of account
+    sl_pct: 2.5, tp_pct: 5,
     trailing: { trigger: 6, distance: 2 },
     confidence_min: 8,
     scan_interval: { base: 259200, volatile: 86400, quiet: 432000 },  // 3d/1d/5d
@@ -612,16 +608,16 @@ function select_params(mode, confidence) {
   const config = MODE_CONFIG[mode]
   const conf_factor = (confidence - config.confidence_min) / (10 - config.confidence_min)
 
-  // Higher confidence = higher end of range
+  // Higher confidence = higher end of range (for leverage only)
   const pick = (range) => Array.isArray(range)
     ? range[0] + (range[1] - range[0]) * conf_factor
     : range
 
   return {
-    leverage: config.leverage === 'MAX' ? 'MAX' : pick(config.leverage),
-    position_pct: pick(config.position_pct),
-    sl_pct: pick(config.sl_pct),
-    tp_pct: pick(config.tp_pct)
+    leverage: pick(config.leverage),
+    position_pct: config.position_pct,
+    sl_pct: config.sl_pct,
+    tp_pct: config.tp_pct
   }
 }
 ```

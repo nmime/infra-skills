@@ -10,13 +10,13 @@ target: +100% to +300% based on account size
   $100-1000: +175%
   >$1000: +125%
 
-leverage: MAX available (up to 50x)
-position: 30-50% of account (confidence-based)
-sl: -10% to -15%
-tp: +15% to +25%
-trailing: 15% distance after +20% profit
-max_positions: 2
-scan: 2hr base (30min volatile, 4hr quiet)
+leverage: 15-25x (max 25x)
+position: 25% of account
+sl: -10%
+tp: +20% (min 2x SL)
+trailing: 5% distance after +20% profit
+max_positions: 3
+scan: 10min base (5min volatile, 20min quiet)
 daily_limit: -15%
 confidence_min: 5
 
@@ -112,21 +112,21 @@ if (confidence < 5) {
 
 ```javascript
 hyperliquid_get_positions({})
-if (positions.length >= 2) return SKIP
+if (positions.length >= 3) return SKIP
 
 // Get params based on confidence
 const params = select_params('degen', confidence)
-const meta = await hyperliquid_get_meta({ coin })
-const leverage = params.leverage === 'MAX' ? meta.maxLeverage : Math.min(meta.maxLeverage, params.leverage)
+const leverage = Math.min(maxLeverage, 25)
 
 hyperliquid_update_leverage({ coin, leverage, is_cross: true })
 
 const price = await hyperliquid_get_price(coin)
-const margin = accountValue * params.position_pct * size_mult
+const margin = accountValue * 0.25 * size_mult
 const size = calculate_size(margin, leverage, price)
 
-const sl_price = price * (is_buy ? (1 - params.sl_pct/100) : (1 + params.sl_pct/100))
-const tp_price = price * (is_buy ? (1 + params.tp_pct/100) : (1 - params.tp_pct/100))
+const sl_pct = 10, tp_pct = 20
+const sl_price = price * (is_buy ? (1 - sl_pct/100) : (1 + sl_pct/100))
+const tp_price = price * (is_buy ? (1 + tp_pct/100) : (1 - tp_pct/100))
 
 // Atomic bracket order
 const result = await place_bracket_order(coin, is_buy, size, price, tp_price, sl_price, 'degen')
@@ -207,7 +207,7 @@ for (const pos of positions) {
   await manage_partial_takes(chat_id, pos, params.tp_pct)
 }
 
-notify('degen', 'scan', { pos: positions.length, max: 2, bal: accountValue.toFixed(2) })
+notify('degen', 'scan', { pos: positions.length, max: 3, bal: accountValue.toFixed(2) })
 ```
 
 ### On Trade Close
@@ -231,15 +231,16 @@ if (accountValue >= session.target_balance) {
   return STOP
 }
 
-if (positions.length < 2) // research new trade
+if (positions.length < 3) // research new trade
 ```
 
 ### On Position Alert
 
 ```
-+10% → check trailing stop
-+20% → activate trailing (15% distance)
--5%  → watch, never move stop down
++5%  → breakeven (-0.3%)
++10% → +5% locked
++15% → +10% locked
++20% → trail 5% below max
 ```
 
 ### LAST STEP (NEVER SKIP)

@@ -10,13 +10,13 @@ target: +50% to +100% based on account size
   $100-1000: +75%
   >$1000: +50%
 
-leverage: 10-20x (confidence-based)
-position: 15-25% of account (confidence-based)
-sl: -5% to -8%
-tp: +12% to +20%
+leverage: 5-15x (max 15x)
+position: 15% of account
+sl: -6%
+tp: +12% (min 2x SL)
 trailing: 4% distance after +15% profit
 max_positions: 3
-scan: 1hr base (20min volatile, 2hr quiet)
+scan: 20min base (10min volatile, 40min quiet)
 daily_limit: -10%
 confidence_min: 6
 
@@ -121,17 +121,17 @@ if (confidence < 6) return SKIP
 hyperliquid_get_positions({})
 if (positions.length >= 3) return SKIP
 
-const params = select_params('aggressive', confidence)
-const leverage = Math.min(Math.max(maxLeverage, params.leverage[0]), params.leverage[1])
+const leverage = Math.min(Math.max(maxLeverage, 5), 15)
 
 hyperliquid_update_leverage({ coin, leverage, is_cross: true })
 
 const price = await hyperliquid_get_price(coin)
-const margin = accountValue * params.position_pct * size_mult
+const margin = accountValue * 0.15 * size_mult
 const size = calculate_size(margin, leverage, price)
 
-const sl_price = price * (is_buy ? (1 - params.sl_pct/100) : (1 + params.sl_pct/100))
-const tp_price = price * (is_buy ? (1 + params.tp_pct/100) : (1 - params.tp_pct/100))
+const sl_pct = 6, tp_pct = 12
+const sl_price = price * (is_buy ? (1 - sl_pct/100) : (1 + sl_pct/100))
+const tp_price = price * (is_buy ? (1 + tp_pct/100) : (1 - tp_pct/100))
 
 const result = await place_bracket_order(coin, is_buy, size, price, tp_price, sl_price, 'aggressive')
 
@@ -241,9 +241,10 @@ if (positions.length < 3) // research new trade
 ### On Position Alert
 
 ```
-+8%  → check trailing
-+15% → activate trailing (4% distance)
--4%  → watch only
++5%  → breakeven (-0.3%)
++8%  → +4% locked
++12% → +8% locked
++15% → trail 4% below max
 ```
 
 ### LAST STEP (NEVER SKIP)

@@ -10,15 +10,16 @@ target: +25% to +50% based on account size
   $100-1000: +40%
   >$1000: +25%
 
-leverage: 3-7x (confidence-based)
-position: 8-12% of account (confidence-based)
-sl: -3% to -5%
-tp: +8% to +12%
+leverage: 3-5x
+position: 10% of account
+sl: -4%
+tp: +8% (min 2x SL)
 trailing: 3% distance after +10% profit
 max_positions: 4
 scan: 2hr base (1hr volatile, 4hr quiet)
 daily_limit: -8%
 confidence_min: 7
+btc_alignment: REQUIRED
 
 risk_profile: Moderate
   btc_alignment: REQUIRED (hard skip)
@@ -125,21 +126,21 @@ if (confidence < 7) return SKIP
 hyperliquid_get_positions({})
 if (positions.length >= 4) return SKIP
 
-const params = select_params('balanced', confidence)
-const leverage = Math.min(Math.max(maxLeverage, params.leverage[0]), params.leverage[1])
+const leverage = Math.min(Math.max(maxLeverage, 3), 5)
 
 hyperliquid_update_leverage({ coin, leverage, is_cross: true })
 
 const price = await hyperliquid_get_price(coin)
-const margin = accountValue * params.position_pct * size_mult
+const margin = accountValue * 0.10 * size_mult
 const size = calculate_size(margin, leverage, price)
 
-const sl_price = price * (is_buy ? (1 - params.sl_pct/100) : (1 + params.sl_pct/100))
-const tp_price = price * (is_buy ? (1 + params.tp_pct/100) : (1 - params.tp_pct/100))
+const sl_pct = 4, tp_pct = 8
+const sl_price = price * (is_buy ? (1 - sl_pct/100) : (1 + sl_pct/100))
+const tp_price = price * (is_buy ? (1 + tp_pct/100) : (1 - tp_pct/100))
 
 const result = await place_bracket_order(coin, is_buy, size, price, tp_price, sl_price, 'balanced')
 
-const rr = (params.tp_pct / params.sl_pct).toFixed(1)
+const rr = (tp_pct / sl_pct).toFixed(1)
 notify('balanced', 'entry', { dir: is_buy ? 'LONG' : 'SHORT', coin, price, lev: leverage, rr })
 ```
 
@@ -241,9 +242,10 @@ if (accountValue >= session.target_balance) {
 ### On Position Alert
 
 ```
-+5%  → check trailing
-+10% → activate trailing (3% distance)
--2%  → watch only
++3%  → breakeven (-0.2%)
++5%  → +2% locked
++8%  → +5% locked
++10% → trail 3% below max
 ```
 
 ### LAST STEP (NEVER SKIP)

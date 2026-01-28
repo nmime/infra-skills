@@ -9,15 +9,17 @@ target: +20% annually
   Q1: +5%, Q2: +10%, Q3: +15%, Q4: +20%
 
 leverage: 1-2x
-position: 5-8% of account (confidence-based)
-sl: -2% to -3%
-tp: +5% to +8%
+position: 6% of account
+sl: -2.5%
+tp: +5% (min 2x SL)
 trailing: 2% distance after +6% profit
 max_positions: 6
 max_margin: 60% (keep 40% cash)
 scan: 3d base (1d volatile, 5d quiet)
 daily_limit: -5%
 confidence_min: 8
+btc_alignment: REQUIRED
+weekend_trading: DISABLED
 
 risk_profile: Capital Preservation
   btc_alignment: REQUIRED (hard skip)
@@ -113,17 +115,17 @@ const margin_used_pct = totalMarginUsed / accountValue
 if (margin_used_pct > 0.60) return SKIP
 if (positions.length >= 6) return SKIP
 
-const params = select_params('conservative', confidence)
 const leverage = 2
 
 hyperliquid_update_leverage({ coin, leverage, is_cross: true })
 
 const price = await hyperliquid_get_price(coin)
-const margin = accountValue * params.position_pct * size_mult
+const margin = accountValue * 0.06 * size_mult
 const size = calculate_size(margin, leverage, price)
 
-const sl_price = price * (is_buy ? (1 - params.sl_pct/100) : (1 + params.sl_pct/100))
-const tp_price = price * (is_buy ? (1 + params.tp_pct/100) : (1 - params.tp_pct/100))
+const sl_pct = 2.5, tp_pct = 5
+const sl_price = price * (is_buy ? (1 - sl_pct/100) : (1 + sl_pct/100))
+const tp_price = price * (is_buy ? (1 + tp_pct/100) : (1 - tp_pct/100))
 
 const result = await place_bracket_order(coin, is_buy, size, price, tp_price, sl_price, 'conservative')
 
@@ -193,9 +195,9 @@ if (pnl_pct > 0) {
 ### On Position Alert
 
 ```
-+3%  → check trailing
-+6%  → activate trailing (2% distance)
--1.5% → review
++2.5% → breakeven (-0.1%)
++4%   → +2% locked
++6%   → trail 2% below max
 ```
 
 ### LAST STEP (NEVER SKIP)
