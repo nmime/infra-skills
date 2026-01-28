@@ -1,501 +1,293 @@
 # Conservative Mode
 
-**Strategy:** Macro Trends + Capital Preservation + Long-Term Compounding | Full Autonomy | Top 10 Coins Only | KV State Tracking
+Macro Trends + Capital Preservation | Top 10 Only | 1-2x | 3-day scans
 
-## Target
-
-**Goal: +20% annually**
-
-Agent runs indefinitely until stopped. Checks progress quarterly.
+## Config
 
 ```
-Example:
-Starting Balance: $1,000
-Annual Target: $1,200 (+20%)
+target: +20% annually
+  Q1: +5%, Q2: +10%, Q3: +15%, Q4: +20%
 
-Quarterly milestones:
-  Q1: $1,050 (+5%)
-  Q2: $1,100 (+10%)
-  Q3: $1,150 (+15%)
-  Q4: $1,200 (+20%) → Target hit, continue or stop
+leverage: 1-2x
+position: 6% of account
+sl: -2.5%
+tp: +5% (min 2x SL)
+max_positions: 6
+max_margin: 60% (keep 40% cash)
+scan: 3 days
+daily_limit: -5%
+confidence_min: 8
+btc_alignment: REQUIRED
+weekend_trading: DISABLED
 ```
-
-If target hit early → Report success, keep running (compound gains).
-
-## Parameters
-
-| Parameter | Value |
-|-----------|-------|
-| Target | +20% annually |
-| Leverage | 1-2x (near spot) |
-| Position Size | 5-8% of account |
-| Stop Loss | -2% to -3% |
-| Take Profit | +5% to +8% (min 2× SL) |
-| Max Positions | 6 (highly diversified) |
-| Scan Interval | 3 days (72 hours) |
-| Daily Loss Limit | -5% (hard stop) |
-
-## Dynamic Stop-Loss Levels
-
-| Position P&L | Move Stop To | Locked Profit |
-|--------------|--------------|---------------|
-| +2.5% | Breakeven (-0.1%) | Risk-free |
-| +4% | +2% | +2% guaranteed |
-| +6%+ | Trail 2% below max | Ride the trend |
 
 ## Allowed Coins
 
-Top 10 only: BTC, ETH, SOL, BNB, XRP, ADA, AVAX, DOGE, LINK, DOT
+BTC, ETH, SOL, BNB, XRP, ADA, AVAX, DOGE, LINK, DOT
 
-## Setup Flow
+## Dynamic Stops
 
-### Step 0: Initialize Long-Term Session (KV Storage)
+```
++2.5% → breakeven (-0.1%)
++4%   → +2% locked
++6%   → trail 2% below max
+```
+
+## Setup
+
+### Step 0: Init Session
 
 ```javascript
-// Get starting balance
 hyperliquid_get_balance({})
-STARTING_BALANCE = accountValue
-START_DATE = now()
+const starting = accountValue
+const target = starting * 1.20
 
-// Calculate annual target
-TARGET_PCT = 20
-TARGET_BALANCE = STARTING_BALANCE * 1.20
-
-// Calculate quarterly milestones
-Q1_TARGET = STARTING_BALANCE * 1.05  // +5%
-Q2_TARGET = STARTING_BALANCE * 1.10  // +10%
-Q3_TARGET = STARTING_BALANCE * 1.15  // +15%
-Q4_TARGET = STARTING_BALANCE * 1.20  // +20%
-
-// Initialize all KV state
-await init_session(chat_id, 'conservative', STARTING_BALANCE, TARGET_BALANCE)
+await init_session(chat_id, 'conservative', starting, target)
 
 // Store quarterly targets
 const session = JSON.parse(await splox_kv_get({ key: `${chat_id}_session` }))
-session.quarterly_targets = { Q1: Q1_TARGET, Q2: Q2_TARGET, Q3: Q3_TARGET, Q4: Q4_TARGET }
-session.start_date = START_DATE
+session.quarterly_targets = {
+  Q1: starting * 1.05,
+  Q2: starting * 1.10,
+  Q3: starting * 1.15,
+  Q4: starting * 1.20
+}
+session.start_date = Date.now()
 await splox_kv_set({ key: `${chat_id}_session`, value: JSON.stringify(session) })
 
-// Notify
-telegram_send_message({
-  text: `🛡️ *Conservative mode started*
-Starting: $${STARTING_BALANCE}
-Annual target: $${TARGET_BALANCE} (+20%)
-Scanning every 3 days
-This is a marathon, not a sprint.`
-})
+telegram_send_message({ text: `🛡️ Conservative | $${starting} → $${target} (+20%/year) | 3d` })
 ```
 
-### Step 1: Create Event Hub Webhook
+### Step 1: Create Webhook
 
 ```javascript
-event_create_webhook({
-  label: "hyperliquid_conservative"
-})
-// Save webhook_id and webhook_url to session
+const { webhook_id, webhook_url } = await event_create_webhook({ label: "hyperliquid_conservative" })
+
 const session = JSON.parse(await splox_kv_get({ key: `${chat_id}_session` }))
 session.webhook_id = webhook_id
 session.webhook_url = webhook_url
 await splox_kv_set({ key: `${chat_id}_session`, value: JSON.stringify(session) })
 ```
 
-### Step 2: Market Research (Macro Focus)
+### Step 2: Research (Macro Focus)
 
-Always include chat_id as a prefix
 ```javascript
 market_deepresearch({
-  context_memory_id: "{chat_id}_conservative_session",
-  message: `Quick scan (1-2 min max): Find the best momentum trade RIGHT NOW on Hyperliquid perpetuals.
-
-Analyze:
-1. BTC weekly trend - Is the macro direction clear?
-2. Top 10 coins only: BTC, ETH, SOL, BNB, XRP, ADA, AVAX, DOGE, LINK, DOT
-3. Weekly/monthly chart trends
-4. Are we in accumulation, markup, distribution, or markdown phase?
-5. Any major macro events coming? (halving, ETF, regulation)
+  context_memory_id: `${chat_id}_conservative_session`,
+  message: `Macro scan for Hyperliquid:
+1. BTC weekly trend - clear direction?
+2. Top 10 only: BTC, ETH, SOL, BNB, XRP, ADA, AVAX, DOGE, LINK, DOT
+3. Weekly/monthly charts
+4. Market phase: accumulation/markup/distribution/markdown?
+5. Major events coming?
 
 Rules:
-- Only LONG in uptrends, only SHORT in confirmed downtrends
-- Follow BTC - don't fight the king
-- Skip if unclear - most scans should result in no trade
-- Confidence must be 8+ to trade
+- LONG only in uptrends
+- SHORT only in confirmed downtrends
+- Follow BTC
+- Skip if unclear (most scans = no trade)
+- Confidence 8+ to trade
 
-I need:
-- Market assessment (bullish / bearish / unclear)
-- If clear: Up to 2 trade ideas from top 10
-- If unclear: Recommend waiting
-
-Current positions: [LIST CURRENT POSITIONS]
-Cash available: [CASH %]
-
-Remember: It's OK to do nothing. Capital preservation first.`
+Need: market assessment, up to 2 ideas from top 10 OR recommend waiting.`
 })
 ```
 
-**Trade Requirement:**
-- Confidence >= 8
-- Macro trend clear
-- BTC aligned
-- Most scans = no trade (expected)
-
-### Step 3: Validate Coins
+### Step 3: Validate
 
 ```javascript
-// Only allow top 10
-ALLOWED_COINS = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "AVAX", "DOGE", "LINK", "DOT"]
+const ALLOWED = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "AVAX", "DOGE", "LINK", "DOT"]
+if (!ALLOWED.includes(coin)) return SKIP
 
-if (!ALLOWED_COINS.includes(coin)) {
-  "Coin not in top 10, skipping"
-  SKIP
-}
-
-hyperliquid_get_meta({ coin: "COIN" })
-hyperliquid_get_all_prices({ coins: ["COIN"] })
-hyperliquid_get_funding_rates({ coin: "COIN" })
+hyperliquid_get_meta({ coin })
+hyperliquid_get_all_prices({ coins: [coin] })
+hyperliquid_get_funding_rates({ coin })
 ```
 
-### Step 3b: Pre-Trade Checks (Strict)
+### Step 3b: Pre-Trade Checks (STRICT)
 
 ```javascript
-// 1. Check liquidity & spread (strictest requirements)
-const liquidity = await check_liquidity(COIN, MARGIN, 'conservative')
-if (!liquidity.ok) SKIP
+const liq = await check_liquidity(coin, margin, 'conservative')
+if (!liq.ok) return SKIP
 
-// 2. Check BTC alignment (REQUIRED - no exceptions)
-const btc_check = await check_btc_alignment(COIN, DIRECTION)
-if (!btc_check.aligned) {
-  telegram_send_message({ text: `⚠️ ${COIN} against BTC trend. Conservative mode requires alignment. Skipping.` })
-  SKIP
+// BTC alignment REQUIRED - no exceptions
+const btc = await check_btc_alignment(coin, direction)
+if (!btc.aligned) {
+  telegram_send_message({ text: `⚠️ ${coin} vs BTC, conservative requires alignment, skip` })
+  return SKIP
 }
 
-// 3. Check time conditions
-const time_check = check_trading_conditions()
-if (time_check.is_weekend) {
-  telegram_send_message({ text: `⚠️ Weekend - Conservative mode pauses weekend trading.` })
-  SKIP  // Conservative: no weekend trading
+// No weekend trading
+const time = check_trading_conditions()
+if (time.is_weekend) {
+  telegram_send_message({ text: `⚠️ Weekend, conservative pauses` })
+  return SKIP
 }
-let SIZE_MULTIPLIER = time_check.multiplier
+let size_mult = time.multiplier
 
-// 4. Check drawdown
 const balance = await hyperliquid_get_balance({})
-const drawdown = await check_drawdown_circuit_breaker(chat_id, balance.accountValue)
-if (drawdown.halt) STOP
-SIZE_MULTIPLIER *= drawdown.size_multiplier
+const dd = await check_drawdown_circuit_breaker(chat_id, balance.accountValue)
+if (dd.halt) return STOP
+size_mult *= dd.size_multiplier
 
-// 5. Check consecutive losses
-const loss_check = await check_consecutive_losses(chat_id)
-if (loss_check.stop_24h) STOP
-if (loss_check.cooldown) SIZE_MULTIPLIER *= loss_check.size_multiplier
+const loss = await check_consecutive_losses(chat_id)
+if (loss.stop_24h) return STOP
+if (loss.cooldown) size_mult *= loss.size_multiplier
 
-// 6. Check daily loss limit
 const daily = await check_daily_loss_limit(chat_id, 'conservative')
-if (daily.exceeded) SKIP
+if (daily.exceeded) return SKIP
 
-// 7. Final confidence check (must be 8+)
-if (CONFIDENCE < 8) SKIP
+if (confidence < 8) return SKIP
 ```
 
-### Step 4: Execute Trade (Small & Safe)
+### Step 4: Execute (Small & Safe)
 
 ```javascript
-// Check portfolio constraints
 hyperliquid_get_positions({})
 
-// Rules:
-// - Max 6 positions
-// - Max 60% total margin (keep 40% cash)
-// - Max 10% per position
-
-current_margin_pct = totalMarginUsed / accountValue
-if (current_margin_pct > 0.60) {
-  "Portfolio at max allocation (60%), keeping cash reserve"
-  SKIP
+// Max 6 positions, max 60% margin
+const margin_used_pct = totalMarginUsed / accountValue
+if (margin_used_pct > 0.60) {
+  telegram_send_message({ text: `Portfolio at 60%, keeping cash` })
+  return SKIP
 }
+if (positions.length >= 6) return SKIP
 
-if (positions.length >= 6) {
-  "Max positions reached (6), waiting for exits"
-  SKIP
-}
+const leverage = 2
 
-// Set low leverage (1-2x)
-LEVERAGE = 2
+hyperliquid_update_leverage({ coin, leverage, is_cross: true })
 
-hyperliquid_update_leverage({
-  coin: "COIN",
-  leverage: LEVERAGE,
-  is_cross: true
-})
+let margin = accountValue * 0.06 * size_mult
+const sl_pct = 2.5, tp_pct = 5
 
-// Small position size with multipliers
-let MARGIN = accountValue * 0.06
-MARGIN *= SIZE_MULTIPLIER
+const sl_price = entry * (is_buy ? (1 - sl_pct/100) : (1 + sl_pct/100))
+const tp_price = entry * (is_buy ? (1 + tp_pct/100) : (1 - tp_pct/100))
 
-// Calculate TP/SL with enforced 2:1 minimum R:R
-const SL_PCT = 2.5
-const TP_PCT = Math.max(SL_PCT * 2, 5)
+const result = await place_protected_order(coin, is_buy, size, 'conservative')
 
-const SL_PRICE = ENTRY_PRICE * (is_buy ? (1 - SL_PCT/100) : (1 + SL_PCT/100))
-const TP_PRICE = ENTRY_PRICE * (is_buy ? (1 + TP_PCT/100) : (1 - TP_PCT/100))
-
-// Use slippage-protected order (tightest tolerance)
-const entry_result = await place_protected_order(COIN, is_buy, POSITION_SIZE, 'conservative')
-
-// Place TP/SL after entry
-hyperliquid_place_order({ coin: "COIN", order_type: "take_profit", trigger_price: TP_PRICE, reduce_only: true })
-hyperliquid_place_order({ coin: "COIN", order_type: "stop_loss", trigger_price: SL_PRICE, reduce_only: true })
+hyperliquid_place_order({ coin, order_type: "take_profit", trigger_price: tp_price, reduce_only: true })
+hyperliquid_place_order({ coin, order_type: "stop_loss", trigger_price: sl_price, reduce_only: true })
 ```
 
-### Step 5: Setup Monitoring
+### Step 5: Subscribe
 
 ```javascript
-// Subscribe for all positions
-// Note: If multiple coins, duplicate this call for each coin
 hyperliquid_subscribe_webhook({
-  webhook_url: WEBHOOK_URL,
-  coins: ["COIN"],
+  webhook_url,
+  coins: [coin],
   events: ["fills", "orders"],
   position_alerts: [
-    { coin: "COIN", condition: "pnl_pct_gt", value: 2.5 },  // Breakeven trigger
-    { coin: "COIN", condition: "pnl_pct_gt", value: 4 },    // +2% lock trigger
-    { coin: "COIN", condition: "pnl_pct_gt", value: 6 },    // Trailing start
-    { coin: "COIN", condition: "pnl_pct_lt", value: -1.5 }  // Early warning
+    { coin, condition: "pnl_pct_gt", value: 2.5 },
+    { coin, condition: "pnl_pct_gt", value: 4 },
+    { coin, condition: "pnl_pct_gt", value: 6 },
+    { coin, condition: "pnl_pct_lt", value: -1.5 }
   ]
 })
 
-// Subscribe to Event Hub
-event_subscribe({
-  webhook_id: WEBHOOK_ID,
-  timeout: 2592000,  // 30 days (max)
+const { subscription_id } = await event_subscribe({
+  webhook_id,
+  timeout: 2592000, // 30 days
   triggers: [
     { name: "trade_events", filter: "payload.type == 'fill' || payload.type == 'order'", debounce: 10 },
     { name: "position_alerts", filter: "payload.type == 'position_alert'", debounce: 10 }
   ]
 })
 
-// Save subscription_id to session
 const session = JSON.parse(await splox_kv_get({ key: `${chat_id}_session` }))
-session.subscription_id = SUBSCRIPTION_ID
+session.subscription_id = subscription_id
 await splox_kv_set({ key: `${chat_id}_session`, value: JSON.stringify(session) })
 ```
 
-### Step 6: Schedule 3-Day Scans
+### Step 6: Schedule
 
 ```javascript
-schedule({
-  subscription_id: SUBSCRIPTION_ID,
-  delay: 259200,  // 3 days = 72 hours
-  message: "3-day scan: Check macro conditions, review portfolio"
-})
+schedule({ subscription_id, delay: 259200, message: "3-day scan" }) // 72 hours
 ```
 
 ## Event Handling
 
-**CRITICAL: Every event MUST end with re-schedule. Never skip.**
-
-### On ANY Wake-up (first thing)
+### On Wake-up (ALWAYS FIRST)
 
 ```javascript
-// 1. Get current state
 hyperliquid_get_balance({})
 hyperliquid_get_positions({})
 
-// 2. CHECK DRAWDOWN CIRCUIT BREAKER
-const drawdown = await check_drawdown_circuit_breaker(chat_id, accountValue)
-if (drawdown.halt) {
-  await cleanup_session(chat_id)
-  STOP
-}
+const dd = await check_drawdown_circuit_breaker(chat_id, accountValue)
+if (dd.halt) { await cleanup_session(chat_id); return STOP }
 
-// 3. Check daily loss limit
 const daily = await check_daily_loss_limit(chat_id, 'conservative')
 
-// 4. Check consecutive losses
-const loss_check = await check_consecutive_losses(chat_id)
-if (loss_check.stop_24h) {
-  schedule({ subscription_id: SUBSCRIPTION_ID, delay: 86400, message: "24h cooldown ended" })
-  STOP
+const loss = await check_consecutive_losses(chat_id)
+if (loss.stop_24h) {
+  schedule({ subscription_id, delay: 86400, message: "24h cooldown" })
+  return STOP
 }
 
-// 5. Manage dynamic stops and partial takes
-for (const position of positions) {
-  await manage_dynamic_stop(position, 'conservative')
-  await manage_partial_takes(chat_id, position, 5)  // tp_pct = 5% for conservative
+for (const pos of positions) {
+  await manage_dynamic_stop(pos, 'conservative')
+  await manage_partial_takes(chat_id, pos, 5)
 }
 
-// 6. Get stats and report to Telegram
 const stats = JSON.parse(await splox_kv_get({ key: `${chat_id}_stats` }) || '{}')
 const session = JSON.parse(await splox_kv_get({ key: `${chat_id}_session` }) || '{}')
 
 telegram_send_message({
-  chat_id: TELEGRAM_CHAT_ID,
-  text: `📊 3-Day Report:
-Positions: ${positions.length}/6
-Cash: ${cashPct}%
-Total P&L: ${totalPnl}%
-Annual target: $${session.target_balance} (+20%)
-Progress: ${progress}%
-Stats: ${stats.wins || 0}W/${stats.losses || 0}L`
+  text: `📊 3-Day | ${positions.length}/6 | Cash ${(100 - totalMarginUsed/accountValue*100).toFixed(0)}% | ${stats.wins}W/${stats.losses}L`
 })
 
-// 7. Check quarterly milestone
+// Quarterly check
 await check_quarterly_progress(chat_id, accountValue)
 ```
 
-### On Trade Event (fill/order)
+### Quarterly Progress
 
 ```javascript
-if (payload.closedPosition) {
-  const closed = payload.closedPosition
-
-  // Record the trade
-  await record_trade(chat_id, {
-    coin: closed.coin,
-    direction: closed.direction,
-    entry_price: closed.entryPx,
-    exit_price: closed.exitPx,
-    pnl_pct: closed.pnl_pct,
-    pnl_usd: closed.pnl_usd,
-    duration_min: (Date.now() - closed.openTime) / 60000,
-    exit_reason: closed.exit_reason
-  })
-
-  // Clear partials tracking
-  await clear_partials(chat_id, closed.coin)
-
-  // Check re-entry if trailing stop exit
-  if (closed.exit_reason === 'trailing_stop' && closed.pnl_pct > 0) {
-    const reentry = await check_reentry_opportunity(closed)
-    if (reentry.reentry) {
-      // Execute re-entry
-    }
-  }
-
-  // Position closed → slot opens (don't rush to fill)
-}
-```
-
-### On Position Alert
-
-| Alert | Action |
-|-------|--------|
-| +2.5% | Move stop to breakeven |
-| +4% | Lock +2% profit |
-| +6%+ | Trail 2% behind price |
-| -1.5% | Review, consider early exit |
-
-### On Schedule (3-day scan)
-
-1. Report portfolio status (see above)
-2. Check quarterly milestone (Q1=90d, Q2=180d, Q3=270d, Q4=365d)
-3. If < 6 positions AND cash > 40% AND confidence 8+ → Maybe trade
-4. If unclear → Skip (that's fine for conservative)
-
-### Quarterly Progress Check
-
-```javascript
-async function check_quarterly_progress(chat_id, current_balance) {
+async function check_quarterly_progress(chat_id, balance) {
   const session = JSON.parse(await splox_kv_get({ key: `${chat_id}_session` }))
   const stats = JSON.parse(await splox_kv_get({ key: `${chat_id}_stats` }) || '{}')
 
-  const days_elapsed = (Date.now() - session.start_date) / (1000 * 60 * 60 * 24)
-  const quarter = Math.ceil(days_elapsed / 90)
+  const days = (Date.now() - session.start_date) / 86400000
+  const quarter = Math.ceil(days / 90)
 
-  if (quarter <= 4 && days_elapsed % 90 < 3) {  // Within 3 days of quarter end
+  if (quarter <= 4 && days % 90 < 3) {
     const target = session.quarterly_targets[`Q${quarter}`]
-    const on_track = current_balance >= target
+    const on_track = balance >= target
 
     telegram_send_message({
-      chat_id: TELEGRAM_CHAT_ID,
-      text: `📅 *QUARTERLY REVIEW Q${quarter}*
-Period: ${quarter * 90} days
-Started: $${session.starting_balance}
-Current: $${current_balance.toFixed(2)} (${((current_balance/session.starting_balance - 1) * 100).toFixed(1)}%)
-Target pace: +${quarter * 5}% → ${on_track ? 'Ahead ✓' : 'Behind ✗'}
-
-Trades this quarter:
-  • ${stats.total_trades || 0} total trades
-  • ${stats.wins || 0} wins, ${stats.losses || 0} losses
-  • Win rate: ${stats.total_trades ? ((stats.wins/stats.total_trades)*100).toFixed(0) : 0}%
-
-Assessment: ${on_track ? 'On track. Continue strategy.' : 'Behind pace. Review approach.'}
-Next review: Q${Math.min(quarter + 1, 4)}`
+      text: `📅 Q${quarter} Review | $${balance.toFixed(0)} vs $${target.toFixed(0)} | ${on_track ? '✓' : '✗'} | ${stats.wins}W/${stats.losses}L`
     })
   }
 }
 ```
 
-### LAST STEP (every event, never skip)
+### On Trade Close
 
 ```javascript
-// Always re-schedule before ending
-schedule({
-  subscription_id: SUBSCRIPTION_ID,
-  delay: 259200,  // 3 days
-  message: "3-day scan"
-})
+await record_trade(chat_id, { coin, direction, entry_price, exit_price, pnl_pct, pnl_usd, exit_reason })
+await clear_partials(chat_id, coin)
 
-// If schedule fails (subscription expired):
-// → Run Step 5-6 again to recreate subscription + schedule
+if (exit_reason === 'trailing_stop' && pnl_pct > 0) {
+  const re = await check_reentry_opportunity(closed)
+  if (re.reentry) // re-enter
+}
 ```
 
-**If you don't re-schedule, the agent dies.**
+### On Position Alert
 
-## Cleanup (on manual stop)
+```
++2.5% → breakeven
++4%   → +2% locked
++6%   → trail 2%
+-1.5% → review, consider early exit
+```
+
+### LAST STEP (NEVER SKIP)
+
+```javascript
+schedule({ subscription_id, delay: 259200, message: "3-day scan" })
+```
+
+## Cleanup
 
 ```javascript
 await cleanup_session(chat_id)
-
-// Final report includes:
-// - Duration: X months
-// - Starting: $Y
-// - Final: $Z
-// - Return: +W%
-// - Annualized: +V%
-// - Trades: N total (W wins, L losses)
 ```
-
-## Position Sizing
-
-```
-Account Balance: $X
-Max Positions: 6
-Per Position: 5-8% margin (6% default)
-Leverage: 1-2x (2x default)
-Cash Reserve: Always keep 40%+
-
-Example ($1,000 account):
-- Per position: $60 margin (6%)
-- Leverage: 2x
-- Notional per position: $120
-- Max 6 positions = $360 margin (36%)
-- Cash reserve: $640 (64%)
-- Max loss per position (2.5% SL): $1.50
-- Max loss all positions: $9 (0.9% of account)
-```
-
-## Risk Controls
-
-| Control | Value |
-|---------|-------|
-| Daily Loss Limit | -5% → Stop for day |
-| 3 Consecutive Losses | Cooldown 4-6 hours, size -50% |
-| 5 Losses in Day | Stop for 24 hours |
-| Drawdown -10% | Size reduced 30% |
-| Drawdown -15% | Pause 2 hours, size -50% |
-| Drawdown -20% | **HALT ALL TRADING** |
-| Min R:R | 2:1 (enforced) |
-| Weekend Trading | **DISABLED** |
-
-## Notifications
-
-- "🛡️ Conservative: ${STARTING} → Annual: ${TARGET} (+20%) | Scan: 3d"
-- "🔍 Market unclear, staying cash | Next: 3d"
-- "🎯 {DIRECTION} {COIN} @ ${ENTRY} | {LEV}x | Conf: {CONF}/10 | Next: 3d"
-- "📊 Report: ${BALANCE} (+{PNL_PCT}%) | Pos: {POS}/{MAX} | {W}W/{L}L | Next: 3d"
-- "💰 {COIN} Partial #1: 30% at +{PNL}%"
-- "✅ WIN +${PNL} | {W}W/{L}L | Next: 3d"
-- "❌ LOSS ${PNL} | Next: 3d"
-- "📅 Q{Q} Review: +{PCT}% | {ON_TRACK}"
-- "🎉 ANNUAL TARGET! ${STARTING} → ${FINAL} (+{RETURN}%) | {W}W/{L}L"
-
-Patient. Protected. Compounding.

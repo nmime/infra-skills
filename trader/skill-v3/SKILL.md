@@ -1,369 +1,166 @@
 ---
 name: trader-agent-v3
-description: Autonomous AI trading agent for Hyperliquid perpetual futures exchange with persistent state tracking. Use when user wants to trade crypto, set up trading automation, monitor positions, analyze markets, or manage a Hyperliquid account. Trigger on any trading-related message like "I want to trade", "What's my balance?", "Start trading", "Close positions", etc.
+description: Autonomous trading agent for Hyperliquid with KV state tracking. Trigger on trading messages.
 ---
 
 # Trading Agent V3
 
-Autonomous trading agent for Hyperliquid with persistent state tracking via KV storage.
-
-## Architecture
-
-The agent operates in cycles:
-1. **Monitor** - Listen for market events via webhooks
-2. **Analyze** - Validate signals against strategy rules
-3. **Execute** - Place trades on Hyperliquid
-4. **Track** - Monitor positions, adjust stops, record performance
+Autonomous Hyperliquid trading agent with persistent state via KV storage.
 
 ## KV Storage Keys
 
-All state is persisted using KV storage with these keys:
-
-| Key | Type | Description |
-|-----|------|-------------|
-| `{chat_id}_session` | object | Session state (starting balance, target, mode, etc.) |
-| `{chat_id}_peak_balance` | number | Highest balance achieved (for drawdown calc) |
-| `{chat_id}_trade_history` | array | All completed trades |
-| `{chat_id}_stats` | object | Win/loss stats, streaks |
-| `{chat_id}_partials_{coin}` | object | Partial takes tracking per position |
-| `{chat_id}_daily_losses` | number | Today's cumulative losses |
-| `{chat_id}_daily_date` | string | Date for daily loss reset |
-
-## Setup Flow
-
-### Step 0: Get Telegram Chat ID (once per conversation)
-
-First message in any conversation, ask for Telegram:
-
 ```
-To send you trade notifications, I need your Telegram chat ID.
-
-How to find it:
-1. Message @userinfobot on Telegram
-2. It will reply with your chat ID (a number like 123456789)
-
-Your Telegram chat ID:
+{chat_id}_session        - object: mode, starting_balance, target_balance, webhook_id, subscription_id
+{chat_id}_peak_balance   - number: highest balance for drawdown calc
+{chat_id}_trade_history  - array: all completed trades
+{chat_id}_stats          - object: total_trades, wins, losses, total_pnl, largest_win, largest_loss, current_streak
+{chat_id}_partials_{coin} - object: {p50: bool, p75: bool}
+{chat_id}_daily_losses   - number: today's cumulative loss %
+{chat_id}_daily_date     - string: YYYY-MM-DD for daily reset
 ```
 
-Save as `TELEGRAM_CHAT_ID` for all notifications.
-
-If user says "skip" or "no" → `TELEGRAM_CHAT_ID = null` (no notifications).
-
-Only ask once. Remember for entire conversation.
-
----
-
-### On ANY Trading Message
-
-**Step 1: Check if Hyperliquid is connected**
-
-```javascript
-SPLOX_SEARCH_TOOLS(query: "hyperliquid")
-// Check is_user_connected field
-```
-
-**Step 2a: If NOT Connected**
-
-Show connection instructions:
-
-```
-To trade on Hyperliquid, you need to connect an agent wallet.
-
-1. Create an Agent Wallet (if you don't have one)
-   - Go to: https://app.hyperliquid.xyz/API
-   - Click "Create API Wallet"
-   - Save the private key securely!
-
-2. Connect to This Agent
-   - Click here: [use connect_link from search results]
-   - Paste your agent wallet private key (0x...)
-
-SECURITY:
-   - NEVER use your main wallet private key
-   - Agent wallet can trade but CANNOT withdraw
-   - You control funds from your main wallet
-
-Let me know when you're done!
-```
-
-Wait for user to connect, then proceed to Step 2b.
-
-**Step 2b: If Connected**
-
-Verify account:
-
-```javascript
-// Get Hyperliquid mcp_server_id from SPLOX_LIST_USER_CONNECTIONS
-
-// Verify account
-SPLOX_EXECUTE_TOOL(
-  mcp_server_id: "[hyperliquid_id]",
-  slug: "hyperliquid_get_balance",
-  args: {}
-)
-
-SPLOX_EXECUTE_TOOL(
-  mcp_server_id: "[hyperliquid_id]",
-  slug: "hyperliquid_get_positions",
-  args: {}
-)
-
-SPLOX_EXECUTE_TOOL(
-  mcp_server_id: "[hyperliquid_id]",
-  slug: "hyperliquid_get_open_orders",
-  args: {}
-)
-```
-
-**Step 3: Show Account Status**
-
-```
-ACCOUNT STATUS
-
-Agent Wallet: [address]
-Balance: $[accountValue]
-Positions: [numberOfPositions]
-Orders: [numberOfOrders]
-Margin Used: $[totalMarginUsed]
-Withdrawable: $[withdrawable]
-```
-
-**Step 4: Ask for Trading Mode**
-
-```
-Which trading mode?
-
-1. Conservative - 1-2x leverage, +20%/year target
-2. Balanced - 3-7x leverage, +25-50% target
-3. Aggressive - 10-20x leverage, +50-100% target
-4. Degen - max leverage, +100-300% target
-
-Choose (1-4):
-```
-
-**Step 5: Load Mode Configuration**
-
-Based on user's choice, read the corresponding mode reference file:
-
-- Mode 1: Read `references/mode-conservative.md`
-- Mode 2: Read `references/mode-balanced.md`
-- Mode 3: Read `references/mode-aggressive.md`
-- Mode 4: Read `references/mode-degen.md`
-
-Each mode file contains a step-by-step setup flow. Execute every step in order — each step depends on the previous one. The monitoring and scheduling steps are what make the agent autonomous.
-
-## Trading Modes
-
-| Mode | Leverage | Target | Daily Loss Limit | Scan Interval |
-|------|----------|--------|------------------|---------------|
-| 1. Conservative | 1-2x | +20%/year | -5% | 3 days |
-| 2. Balanced | 3-5x | +25-50% | -8% | 2 hours |
-| 3. Aggressive | 5-15x | +50-100% | -10% | 20 min |
-| 4. Degen | 15-25x | +100-300% | -15% | 10 min |
-
-Each mode has specific parameters in `references/mode-[name].md`.
-
-## Mode Configuration Reference
+## Mode Config
 
 ```javascript
 const MODE_CONFIG = {
   degen: {
     leverage_min: 15, leverage_max: 25,
-    position_pct: 0.25,     // 25% of account
-    sl_pct: 10,             // -10%
-    tp_pct: 20,             // +20%
+    position_pct: 0.25,
+    sl_pct: 10, tp_pct: 20,
     confidence_min: 5,
-    scan_interval: 600,     // 10 min
+    scan_interval: 600,
     slippage: 0.8, max_spread: 0.5,
     daily_loss_limit: 15
   },
   aggressive: {
     leverage_min: 5, leverage_max: 15,
-    position_pct: 0.15,     // 15%
-    sl_pct: 6,              // -6%
-    tp_pct: 12,             // +12%
+    position_pct: 0.15,
+    sl_pct: 6, tp_pct: 12,
     confidence_min: 6,
-    scan_interval: 1200,    // 20 min
+    scan_interval: 1200,
     slippage: 0.5, max_spread: 0.3,
     daily_loss_limit: 10
   },
   balanced: {
     leverage_min: 3, leverage_max: 5,
-    position_pct: 0.10,     // 10%
-    sl_pct: 4,              // -4%
-    tp_pct: 8,              // +8%
+    position_pct: 0.10,
+    sl_pct: 4, tp_pct: 8,
     confidence_min: 7,
-    scan_interval: 7200,    // 2 hours
+    scan_interval: 7200,
     slippage: 0.3, max_spread: 0.2,
     daily_loss_limit: 8
   },
   conservative: {
     leverage_min: 1, leverage_max: 2,
-    position_pct: 0.06,     // 6%
-    sl_pct: 2.5,            // -2.5%
-    tp_pct: 5,              // +5%
+    position_pct: 0.06,
+    sl_pct: 2.5, tp_pct: 5,
     confidence_min: 8,
-    scan_interval: 259200,  // 3 days
+    scan_interval: 259200,
     slippage: 0.2, max_spread: 0.15,
     daily_loss_limit: 5
   }
 }
 ```
 
-## Session Initialization (KV Storage)
+## Setup Flow
 
-**At session start, initialize all state:**
+### 1. Get Telegram Chat ID
+
+Ask user for Telegram chat ID (from @userinfobot). Save as TELEGRAM_CHAT_ID. Skip if user says no.
+
+### 2. Check Hyperliquid Connection
+
+```javascript
+SPLOX_SEARCH_TOOLS({ query: "hyperliquid" })
+// If not connected, show connect_link and wait
+// If connected, get mcp_server_id
+```
+
+### 3. Verify Account
+
+```javascript
+hyperliquid_get_balance({})
+hyperliquid_get_positions({})
+hyperliquid_get_open_orders({})
+```
+
+### 4. Ask Trading Mode
+
+```
+1. Conservative - 1-2x, +20%/year
+2. Balanced - 3-5x, +25-50%
+3. Aggressive - 5-15x, +50-100%
+4. Degen - 15-25x, +100-300%
+```
+
+### 5. Load Mode File
+
+Read `references/mode-{name}.md` and execute setup flow.
+
+## Session Init
 
 ```javascript
 async function init_session(chat_id, mode, starting_balance, target_balance) {
-  const session = {
-    chat_id: chat_id,
-    mode: mode,
-    starting_balance: starting_balance,
-    target_balance: target_balance,
-    start_time: Date.now(),
-    webhook_id: null,
-    subscription_id: null
-  }
-
-  // Initialize session
   await splox_kv_set({
     key: `${chat_id}_session`,
-    value: JSON.stringify(session)
-  })
-
-  // Initialize peak balance for drawdown tracking
-  await splox_kv_set({
-    key: `${chat_id}_peak_balance`,
-    value: starting_balance.toString()
-  })
-
-  // Initialize stats
-  await splox_kv_set({
-    key: `${chat_id}_stats`,
     value: JSON.stringify({
-      total_trades: 0,
-      wins: 0,
-      losses: 0,
-      total_pnl: 0,
-      largest_win: 0,
-      largest_loss: 0,
-      current_streak: 0
+      chat_id, mode, starting_balance, target_balance,
+      start_time: Date.now(), webhook_id: null, subscription_id: null
     })
   })
-
-  // Initialize daily loss tracking
+  await splox_kv_set({ key: `${chat_id}_peak_balance`, value: starting_balance.toString() })
   await splox_kv_set({
-    key: `${chat_id}_daily_losses`,
-    value: "0"
+    key: `${chat_id}_stats`,
+    value: JSON.stringify({ total_trades: 0, wins: 0, losses: 0, total_pnl: 0, largest_win: 0, largest_loss: 0, current_streak: 0 })
   })
-  await splox_kv_set({
-    key: `${chat_id}_daily_date`,
-    value: new Date().toISOString().split('T')[0]
-  })
-
-  // Initialize empty trade history
-  await splox_kv_set({
-    key: `${chat_id}_trade_history`,
-    value: "[]"
-  })
+  await splox_kv_set({ key: `${chat_id}_daily_losses`, value: "0" })
+  await splox_kv_set({ key: `${chat_id}_daily_date`, value: new Date().toISOString().split('T')[0] })
+  await splox_kv_set({ key: `${chat_id}_trade_history`, value: "[]" })
 }
 ```
 
-## Risk Management
+## Drawdown Circuit Breaker
 
-| Rule | Implementation |
-|------|----------------|
-| Position Size | `account × position_pct × size_multiplier` |
-| Stop Loss | Use `sl_pct` from MODE_CONFIG |
-| Take Profit | Use `tp_pct` from MODE_CONFIG (always ≥2× SL) |
-| Daily Loss Limit | Track with KV, stop when hit |
-| Drawdown Circuit Breaker | Track peak balance with KV |
-
-### Drawdown Circuit Breaker
-
-**Check on EVERY wake-up before any action:**
+Call on EVERY wake-up before any action.
 
 ```javascript
 async function check_drawdown_circuit_breaker(chat_id, current_balance) {
-  // Get peak balance
   const peak_str = await splox_kv_get({ key: `${chat_id}_peak_balance` })
-  let peak_balance = parseFloat(peak_str) || current_balance
+  let peak = parseFloat(peak_str) || current_balance
 
-  // Update peak if new high
-  if (current_balance > peak_balance) {
-    peak_balance = current_balance
-    await splox_kv_set({
-      key: `${chat_id}_peak_balance`,
-      value: peak_balance.toString()
-    })
+  if (current_balance > peak) {
+    peak = current_balance
+    await splox_kv_set({ key: `${chat_id}_peak_balance`, value: peak.toString() })
   }
 
-  // Calculate drawdown
-  const drawdown_pct = ((peak_balance - current_balance) / peak_balance) * 100
-
-  let action = 'continue'
-  let size_multiplier = 1.0
+  const drawdown_pct = ((peak - current_balance) / peak) * 100
+  let action = 'continue', size_mult = 1.0
 
   if (drawdown_pct >= 20) {
-    // CRITICAL: Halt all trading
     action = 'halt'
-
-    await telegram_send_message({
-      chat_id: TELEGRAM_CHAT_ID,
-      text: `🛑 *TRADING HALTED*
-Drawdown: -${drawdown_pct.toFixed(1)}% from peak
-Peak: $${peak_balance.toFixed(2)}
-Current: $${current_balance.toFixed(2)}
-
-All positions will be closed.
-Manual restart required.`
-    })
-
-    // Close all positions
+    telegram_send_message({ text: `🛑 HALTED: -${drawdown_pct.toFixed(1)}% drawdown. Closing all.` })
     await cleanup_all_positions()
-
   } else if (drawdown_pct >= 15) {
-    // Severe: Pause and reduce
     action = 'pause'
-    size_multiplier = 0.5
-
-    await telegram_send_message({
-      chat_id: TELEGRAM_CHAT_ID,
-      text: `🔶 *Drawdown Warning* -${drawdown_pct.toFixed(1)}%
-Pausing 2 hours, size reduced 50%`
-    })
-
+    size_mult = 0.5
+    telegram_send_message({ text: `🔶 Drawdown -${drawdown_pct.toFixed(1)}%, pause 2h, size -50%` })
   } else if (drawdown_pct >= 10) {
-    // Warning: Reduce size
     action = 'reduce'
-    size_multiplier = 0.7
-
-    await telegram_send_message({
-      chat_id: TELEGRAM_CHAT_ID,
-      text: `⚠️ *Drawdown Alert* -${drawdown_pct.toFixed(1)}%
-Position sizes reduced 30%`
-    })
+    size_mult = 0.7
+    telegram_send_message({ text: `⚠️ Drawdown -${drawdown_pct.toFixed(1)}%, size -30%` })
   }
 
-  return {
-    drawdown_pct: drawdown_pct,
-    peak_balance: peak_balance,
-    action: action,
-    size_multiplier: size_multiplier,
-    halt: action === 'halt'
-  }
+  return { drawdown_pct, peak, action, size_multiplier: size_mult, halt: action === 'halt' }
 }
 ```
 
-### Daily Loss Tracking
+## Daily Loss Tracking
 
 ```javascript
 async function check_daily_loss_limit(chat_id, mode) {
   const today = new Date().toISOString().split('T')[0]
   const stored_date = await splox_kv_get({ key: `${chat_id}_daily_date` })
 
-  // Reset if new day
   if (stored_date !== today) {
     await splox_kv_set({ key: `${chat_id}_daily_date`, value: today })
     await splox_kv_set({ key: `${chat_id}_daily_losses`, value: "0" })
@@ -374,253 +171,118 @@ async function check_daily_loss_limit(chat_id, mode) {
   const limit = MODE_CONFIG[mode].daily_loss_limit
 
   if (daily_loss >= limit) {
-    await telegram_send_message({
-      chat_id: TELEGRAM_CHAT_ID,
-      text: `🛑 *Daily loss limit reached*
-Loss today: -${daily_loss.toFixed(1)}%
-Limit: -${limit}%
-No new positions until tomorrow.`
-    })
-    return { exceeded: true, daily_loss: daily_loss }
+    telegram_send_message({ text: `🛑 Daily limit: -${daily_loss.toFixed(1)}% (max -${limit}%)` })
+    return { exceeded: true, daily_loss }
   }
-
-  return { exceeded: false, daily_loss: daily_loss }
+  return { exceeded: false, daily_loss }
 }
 
 async function record_daily_loss(chat_id, loss_pct) {
-  // loss_pct should be positive number representing loss
-  await splox_kv_increment({
-    key: `${chat_id}_daily_losses`,
-    increment: loss_pct
-  })
+  await splox_kv_increment({ key: `${chat_id}_daily_losses`, increment: loss_pct })
 }
 ```
 
-### Consecutive Losses Tracking
+## Consecutive Losses
 
 ```javascript
 async function check_consecutive_losses(chat_id) {
-  const stats_str = await splox_kv_get({ key: `${chat_id}_stats` })
-  const stats = JSON.parse(stats_str || '{}')
-
+  const stats = JSON.parse(await splox_kv_get({ key: `${chat_id}_stats` }) || '{}')
   const streak = stats.current_streak || 0
 
-  // Negative streak = consecutive losses
-  if (streak <= -3) {
-    await telegram_send_message({
-      chat_id: TELEGRAM_CHAT_ID,
-      text: `⏸️ *Cooldown activated*
-${Math.abs(streak)} consecutive losses
-Pausing 4-6 hours, size reduced 50%`
-    })
-    return { cooldown: true, streak: streak, size_multiplier: 0.5 }
-  }
-
   if (streak <= -5) {
-    await telegram_send_message({
-      chat_id: TELEGRAM_CHAT_ID,
-      text: `🛑 *Extended cooldown*
-${Math.abs(streak)} losses today
-Stopping for 24 hours`
-    })
-    return { cooldown: true, streak: streak, stop_24h: true }
+    telegram_send_message({ text: `🛑 ${Math.abs(streak)} losses, stopping 24h` })
+    return { cooldown: true, streak, stop_24h: true, size_multiplier: 0.5 }
   }
-
-  return { cooldown: false, streak: streak, size_multiplier: 1.0 }
+  if (streak <= -3) {
+    telegram_send_message({ text: `⏸️ ${Math.abs(streak)} losses, cooldown 4-6h, size -50%` })
+    return { cooldown: true, streak, stop_24h: false, size_multiplier: 0.5 }
+  }
+  return { cooldown: false, streak, size_multiplier: 1.0 }
 }
 ```
 
-### Dynamic Stop-Loss Management
-
-**Move stops to protect profits as position goes in your favor:**
-
-| Position P&L | New Stop Level | Result |
-|--------------|----------------|--------|
-| +5% | Breakeven (-0.3% for fees) | Risk-free position |
-| +10% | +5% locked | Guaranteed profit |
-| +15% | +10% locked | More profit locked |
-| +20%+ | Trail 5% below max | Ride the trend |
+## Dynamic Stop Management
 
 ```javascript
-// Call for each position on every wake-up
 async function manage_dynamic_stop(position, mode) {
   const pnl_pct = position.unrealizedPnl / position.marginUsed * 100
   const entry = position.entryPx
-  const direction = position.szi > 0 ? 1 : -1  // 1 for long, -1 for short
-
+  const dir = position.szi > 0 ? 1 : -1
   let new_stop_pct = null
 
-  // Degen: aggressive trailing
   if (mode === 'degen') {
-    if (pnl_pct >= 20) new_stop_pct = pnl_pct - 5      // Trail 5%
+    if (pnl_pct >= 20) new_stop_pct = pnl_pct - 5
     else if (pnl_pct >= 15) new_stop_pct = 10
     else if (pnl_pct >= 10) new_stop_pct = 5
-    else if (pnl_pct >= 5) new_stop_pct = -0.3         // Breakeven
+    else if (pnl_pct >= 5) new_stop_pct = -0.3
   }
-
-  // Aggressive
   if (mode === 'aggressive') {
-    if (pnl_pct >= 15) new_stop_pct = pnl_pct - 4      // Trail 4%
+    if (pnl_pct >= 15) new_stop_pct = pnl_pct - 4
     else if (pnl_pct >= 12) new_stop_pct = 8
     else if (pnl_pct >= 8) new_stop_pct = 4
-    else if (pnl_pct >= 5) new_stop_pct = -0.3         // Breakeven
+    else if (pnl_pct >= 5) new_stop_pct = -0.3
   }
-
-  // Balanced
   if (mode === 'balanced') {
-    if (pnl_pct >= 10) new_stop_pct = pnl_pct - 3      // Trail 3%
+    if (pnl_pct >= 10) new_stop_pct = pnl_pct - 3
     else if (pnl_pct >= 8) new_stop_pct = 5
     else if (pnl_pct >= 5) new_stop_pct = 2
-    else if (pnl_pct >= 3) new_stop_pct = -0.2         // Breakeven
+    else if (pnl_pct >= 3) new_stop_pct = -0.2
   }
-
-  // Conservative
   if (mode === 'conservative') {
-    if (pnl_pct >= 6) new_stop_pct = pnl_pct - 2       // Trail 2%
+    if (pnl_pct >= 6) new_stop_pct = pnl_pct - 2
     else if (pnl_pct >= 4) new_stop_pct = 2
-    else if (pnl_pct >= 2.5) new_stop_pct = -0.1       // Breakeven
+    else if (pnl_pct >= 2.5) new_stop_pct = -0.1
   }
 
   if (new_stop_pct !== null) {
-    const new_stop_price = entry * (1 + (new_stop_pct / 100) * direction)
-
-    // Only move stop if it's BETTER than current
+    const new_stop_price = entry * (1 + (new_stop_pct / 100) * dir)
     const current_stop = await get_current_stop(position.coin)
-    const is_better = direction > 0
-      ? new_stop_price > current_stop
-      : new_stop_price < current_stop
+    const is_better = dir > 0 ? new_stop_price > current_stop : new_stop_price < current_stop
 
     if (is_better) {
       await move_stop_loss(position.coin, new_stop_price)
-
-      await telegram_send_message({
-        chat_id: TELEGRAM_CHAT_ID,
-        text: `🔒 *${position.coin}* Stop moved
-P&L: +${pnl_pct.toFixed(1)}%
-New SL: $${new_stop_price.toFixed(4)} (${new_stop_pct > 0 ? '+' : ''}${new_stop_pct.toFixed(1)}% locked)`
-      })
+      telegram_send_message({ text: `🔒 ${position.coin} +${pnl_pct.toFixed(1)}% → SL at ${new_stop_pct > 0 ? '+' : ''}${new_stop_pct.toFixed(1)}%` })
     }
   }
 }
 ```
 
-### Partial Profit Taking (Scale Out)
-
-**Don't exit all at once — take profits in stages:**
-
-| Level | Action | Why |
-|-------|--------|-----|
-| 50% to TP | Close 30% | Lock some profit early |
-| 75% to TP | Close 30% | Reduce risk further |
-| 100% TP | Close remaining 40% | Full target |
+## Partial Takes
 
 ```javascript
 async function manage_partial_takes(chat_id, position, tp_pct) {
   const pnl_pct = position.unrealizedPnl / position.marginUsed * 100
-  const progress_to_tp = pnl_pct / tp_pct
+  const progress = pnl_pct / tp_pct
 
-  // Get partial takes state from KV
-  const partials_key = `${chat_id}_partials_${position.coin}`
-  const partials_str = await splox_kv_get({ key: partials_key })
-  const partials = JSON.parse(partials_str || '{"p50": false, "p75": false}')
+  const key = `${chat_id}_partials_${position.coin}`
+  const partials = JSON.parse(await splox_kv_get({ key }) || '{"p50":false,"p75":false}')
 
-  // 50% to TP → close 30%
-  if (progress_to_tp >= 0.5 && !partials.p50) {
-    const close_size = Math.abs(position.szi) * 0.3
-    await hyperliquid_market_close({ coin: position.coin, size: close_size })
-
+  if (progress >= 0.5 && !partials.p50) {
+    await hyperliquid_market_close({ coin: position.coin, size: Math.abs(position.szi) * 0.3 })
     partials.p50 = true
-    await splox_kv_set({ key: partials_key, value: JSON.stringify(partials) })
-
-    await telegram_send_message({
-      chat_id: TELEGRAM_CHAT_ID,
-      text: `💰 *${position.coin}* Partial take #1
-Closed 30% at +${pnl_pct.toFixed(1)}%
-Remaining: 70% riding to TP`
-    })
+    await splox_kv_set({ key, value: JSON.stringify(partials) })
+    telegram_send_message({ text: `💰 ${position.coin} Partial #1: 30% at +${pnl_pct.toFixed(1)}%` })
   }
 
-  // 75% to TP → close another 30%
-  if (progress_to_tp >= 0.75 && !partials.p75) {
-    const close_size = Math.abs(position.szi) * 0.3
-    await hyperliquid_market_close({ coin: position.coin, size: close_size })
-
+  if (progress >= 0.75 && !partials.p75) {
+    await hyperliquid_market_close({ coin: position.coin, size: Math.abs(position.szi) * 0.3 })
     partials.p75 = true
-    await splox_kv_set({ key: partials_key, value: JSON.stringify(partials) })
-
-    await telegram_send_message({
-      chat_id: TELEGRAM_CHAT_ID,
-      text: `💰 *${position.coin}* Partial take #2
-Closed 30% at +${pnl_pct.toFixed(1)}%
-Remaining: 40% riding to TP`
-    })
+    await splox_kv_set({ key, value: JSON.stringify(partials) })
+    telegram_send_message({ text: `💰 ${position.coin} Partial #2: 30% at +${pnl_pct.toFixed(1)}%` })
   }
 }
 
-// Clear partials when position fully closed
 async function clear_partials(chat_id, coin) {
   await splox_kv_delete({ key: `${chat_id}_partials_${coin}` })
 }
 ```
 
-### Re-entry After Trailing Stop
-
-When closed by trailing stop (not original SL), consider re-entering if trend continues:
-
-```javascript
-async function check_reentry_opportunity(closed_position) {
-  // Only for trailing stop exits, not losses
-  if (closed_position.exit_reason !== 'trailing_stop') return null
-  if (closed_position.realized_pnl <= 0) return null
-
-  // Wait 5 minutes for price to settle
-  await wait(5 * 60 * 1000)
-
-  const current_price = await hyperliquid_get_price(closed_position.coin)
-  const exit_price = closed_position.exit_price
-  const was_long = closed_position.direction === 'LONG'
-
-  // Check if price moved further in our direction (trend continuing)
-  const price_continued = was_long
-    ? current_price > exit_price * 1.015  // +1.5% above exit
-    : current_price < exit_price * 0.985  // -1.5% below exit
-
-  if (price_continued) {
-    // Quick trend validation
-    const research = await quick_trend_check(closed_position.coin)
-
-    if (research.confidence >= 6 && research.direction === closed_position.direction) {
-      await telegram_send_message({
-        chat_id: TELEGRAM_CHAT_ID,
-        text: `🔄 *${closed_position.coin}* Re-entry opportunity
-Exited at: $${exit_price.toFixed(4)} (+${closed_position.pnl_pct.toFixed(1)}%)
-Current: $${current_price.toFixed(4)}
-Trend confirmed, re-entering ${closed_position.direction}...`
-      })
-
-      return {
-        reentry: true,
-        coin: closed_position.coin,
-        direction: closed_position.direction
-      }
-    }
-  }
-
-  return { reentry: false }
-}
-```
-
-## Performance Tracking
-
-**Track all trades and analyze performance:**
+## Record Trade
 
 ```javascript
 async function record_trade(chat_id, trade) {
-  // Get current stats
-  const stats_str = await splox_kv_get({ key: `${chat_id}_stats` })
-  const stats = JSON.parse(stats_str || '{}')
+  const stats = JSON.parse(await splox_kv_get({ key: `${chat_id}_stats` }) || '{}')
 
-  // Update stats
   stats.total_trades = (stats.total_trades || 0) + 1
   stats.total_pnl = (stats.total_pnl || 0) + trade.pnl_pct
 
@@ -632,492 +294,156 @@ async function record_trade(chat_id, trade) {
     stats.losses = (stats.losses || 0) + 1
     stats.largest_loss = Math.min(stats.largest_loss || 0, trade.pnl_pct)
     stats.current_streak = stats.current_streak < 0 ? stats.current_streak - 1 : -1
-
-    // Record daily loss
     await record_daily_loss(chat_id, Math.abs(trade.pnl_pct))
   }
 
-  // Save updated stats
   await splox_kv_set({ key: `${chat_id}_stats`, value: JSON.stringify(stats) })
-
-  // Append to trade history
-  const trade_record = {
-    coin: trade.coin,
-    direction: trade.direction,
-    entry: trade.entry_price,
-    exit: trade.exit_price,
-    pnl_pct: trade.pnl_pct,
-    pnl_usd: trade.pnl_usd,
-    duration_min: trade.duration_min,
-    exit_reason: trade.exit_reason,
-    timestamp: Date.now()
-  }
 
   await splox_kv_append_array({
     key: `${chat_id}_trade_history`,
-    value: JSON.stringify(trade_record)
+    value: JSON.stringify({
+      coin: trade.coin, direction: trade.direction,
+      entry: trade.entry_price, exit: trade.exit_price,
+      pnl_pct: trade.pnl_pct, pnl_usd: trade.pnl_usd,
+      exit_reason: trade.exit_reason, timestamp: Date.now()
+    })
   })
 
-  // Every 5 trades: performance report
   if (stats.total_trades % 5 === 0) {
-    const win_rate = (stats.wins / stats.total_trades * 100).toFixed(0)
-    const avg_trade = (stats.total_pnl / stats.total_trades).toFixed(2)
-
-    await telegram_send_message({
-      chat_id: TELEGRAM_CHAT_ID,
-      text: `📊 *Performance Update* (${stats.total_trades} trades)
-Win rate: ${win_rate}%
-Total P&L: ${stats.total_pnl > 0 ? '+' : ''}${stats.total_pnl.toFixed(1)}%
-Avg trade: ${avg_trade}%
-Best: +${stats.largest_win.toFixed(1)}% | Worst: ${stats.largest_loss.toFixed(1)}%
-Streak: ${stats.current_streak > 0 ? '+' + stats.current_streak + ' wins' : stats.current_streak + ' losses'}`
-    })
-
-    // Warning if win rate drops below 35%
-    if (stats.total_trades >= 10 && stats.wins / stats.total_trades < 0.35) {
-      await telegram_send_message({
-        chat_id: TELEGRAM_CHAT_ID,
-        text: `⚠️ *Low win rate warning*
-Win rate: ${win_rate}% (below 35%)
-Consider pausing to review strategy.`
-      })
-    }
+    const wr = (stats.wins / stats.total_trades * 100).toFixed(0)
+    telegram_send_message({ text: `📊 ${stats.total_trades} trades | ${wr}% WR | ${stats.total_pnl > 0 ? '+' : ''}${stats.total_pnl.toFixed(1)}% total` })
   }
 }
 ```
-
-## Funding Rate Edge
-
-| Condition | Action |
-|-----------|--------|
-| Funding > +0.05%/hr | Favor SHORT (longs paying) |
-| Funding < -0.05%/hr | Favor LONG (shorts paying) |
-| Trade against edge | Confidence -2 |
-
-## Volatility Adaptation
-
-| ATR vs Average | Action |
-|----------------|--------|
-| > 1.5× (high vol) | Size ×0.6, reduce leverage |
-| < 0.7× (low vol) | Size ×1.1, normal leverage |
 
 ## Slippage Protection
 
-**Always use limit orders with slippage tolerance instead of pure market orders.**
-
 ```javascript
-// Max slippage by mode
-const SLIPPAGE_TOLERANCE = {
-  degen: 0.8,       // 0.8% - fast execution priority
-  aggressive: 0.5,  // 0.5%
-  balanced: 0.3,    // 0.3%
-  conservative: 0.2 // 0.2% - price priority
-}
-
 async function place_protected_order(coin, is_buy, size, mode) {
-  const current_price = await hyperliquid_get_price(coin)
-  const slippage = SLIPPAGE_TOLERANCE[mode] / 100
-
-  // Limit price with slippage buffer
-  const limit_price = is_buy
-    ? current_price * (1 + slippage)
-    : current_price * (1 - slippage)
+  const slippage = { degen: 0.008, aggressive: 0.005, balanced: 0.003, conservative: 0.002 }[mode]
+  const price = await hyperliquid_get_price(coin)
+  const limit = is_buy ? price * (1 + slippage) : price * (1 - slippage)
 
   return await hyperliquid_place_order({
-    coin: coin,
-    is_buy: is_buy,
-    size: size,
+    coin, is_buy, size,
     order_type: "limit",
-    price: limit_price,
-    time_in_force: "IOC"  // Immediate or Cancel - fill what you can, cancel rest
+    price: limit,
+    time_in_force: "IOC"
   })
 }
 ```
 
-**If IOC order only partially fills:**
-- Accept partial fill if > 70% filled
-- Cancel and retry with wider slippage if < 70% filled
-- Report to Telegram what happened
-
-## Liquidity & Spread Check
-
-**Before entering ANY position, validate liquidity:**
+## Liquidity Check
 
 ```javascript
-async function check_liquidity(coin, position_size_usd, mode) {
-  const orderbook = await hyperliquid_get_orderbook({ coin: coin })
+async function check_liquidity(coin, size_usd, mode) {
+  const book = await hyperliquid_get_orderbook({ coin })
+  const spread = ((book.asks[0][0] - book.bids[0][0]) / book.bids[0][0]) * 100
+  const max_spread = { degen: 0.5, aggressive: 0.3, balanced: 0.2, conservative: 0.15 }[mode]
 
-  // Calculate spread
-  const best_bid = orderbook.bids[0][0]
-  const best_ask = orderbook.asks[0][0]
-  const spread_pct = ((best_ask - best_bid) / best_bid) * 100
-
-  // Max acceptable spread by mode
-  const MAX_SPREAD = {
-    degen: 0.5,       // 0.5% max
-    aggressive: 0.3,  // 0.3%
-    balanced: 0.2,    // 0.2%
-    conservative: 0.15 // 0.15%
+  if (spread > max_spread) {
+    telegram_send_message({ text: `⚠️ ${coin} spread ${spread.toFixed(2)}% > ${max_spread}%, skip` })
+    return { ok: false }
   }
 
-  if (spread_pct > MAX_SPREAD[mode]) {
-    await telegram_send_message({
-      chat_id: TELEGRAM_CHAT_ID,
-      text: `⚠️ *${coin}* spread too wide: ${spread_pct.toFixed(2)}%
-Max allowed: ${MAX_SPREAD[mode]}%
-Skipping trade.`
-    })
-    return { ok: false, reason: 'spread_too_wide' }
+  const depth = Math.min(
+    book.bids.slice(0,5).reduce((s,[p,sz]) => s + p*sz, 0),
+    book.asks.slice(0,5).reduce((s,[p,sz]) => s + p*sz, 0)
+  )
+
+  if (depth < size_usd * 10) {
+    telegram_send_message({ text: `⚠️ ${coin} low depth $${depth.toFixed(0)}, skip` })
+    return { ok: false }
   }
-
-  // Check depth - need 10x our size in top 5 levels
-  const bid_depth = orderbook.bids.slice(0, 5).reduce((sum, [price, size]) => sum + price * size, 0)
-  const ask_depth = orderbook.asks.slice(0, 5).reduce((sum, [price, size]) => sum + price * size, 0)
-  const min_depth = Math.min(bid_depth, ask_depth)
-
-  if (min_depth < position_size_usd * 10) {
-    await telegram_send_message({
-      chat_id: TELEGRAM_CHAT_ID,
-      text: `⚠️ *${coin}* low liquidity
-Depth: $${min_depth.toFixed(0)} | Need: $${(position_size_usd * 10).toFixed(0)}
-Skipping trade.`
-    })
-    return { ok: false, reason: 'low_liquidity' }
-  }
-
-  return { ok: true, spread: spread_pct, depth: min_depth }
+  return { ok: true, spread, depth }
 }
 ```
 
-## Time-Based Filters
+## BTC Alignment
 
-**Reduce exposure during low-liquidity periods:**
+```javascript
+async function check_btc_alignment(coin, direction) {
+  if (coin === 'BTC') return { aligned: true, confidence_penalty: 0 }
+
+  const candles = await hyperliquid_get_candles({ coin: 'BTC', interval: '4h', limit: 2 })
+  const change = (candles[1].close - candles[0].close) / candles[0].close * 100
+
+  let trend = 'NEUTRAL'
+  if (change > 1) trend = 'UP'
+  if (change < -1) trend = 'DOWN'
+
+  const aligned = (direction === 'LONG' && trend !== 'DOWN') || (direction === 'SHORT' && trend !== 'UP')
+
+  if (!aligned) {
+    telegram_send_message({ text: `⚠️ BTC ${trend}, ${direction} ${coin} misaligned, conf -2` })
+  }
+  return { aligned, btc_trend: trend, confidence_penalty: aligned ? 0 : -2 }
+}
+```
+
+## Time Filter
 
 ```javascript
 function check_trading_conditions() {
   const now = new Date()
-  const hour_utc = now.getUTCHours()
-  const day = now.getUTCDay()  // 0 = Sunday
+  const hour = now.getUTCHours()
+  const day = now.getUTCDay()
 
-  const conditions = {
-    is_weekend: (day === 0 || day === 6),
-    is_asia_night: (hour_utc >= 21 || hour_utc <= 5),  // Low liquidity
-    is_us_open: (hour_utc >= 13 && hour_utc <= 21),    // High liquidity
-    multiplier: 1.0,
-    warning: null
-  }
+  let mult = 1.0, warning = null
+  const is_weekend = day === 0 || day === 6
+  const is_night = hour >= 21 || hour <= 5
 
-  // Weekend: reduce size, wider stops
-  if (conditions.is_weekend) {
-    conditions.multiplier = 0.7
-    conditions.warning = "Weekend trading - reduced size"
-  }
+  if (is_weekend) { mult = 0.7; warning = "Weekend, size x0.7" }
+  else if (is_night) { mult = 0.8; warning = "Night, size x0.8" }
 
-  // Asia night (low liquidity): reduce size
-  if (conditions.is_asia_night && !conditions.is_weekend) {
-    conditions.multiplier = 0.8
-    conditions.warning = "Low liquidity hours - reduced size"
-  }
-
-  return conditions
+  return { is_weekend, is_night, multiplier: mult, warning }
 }
 ```
 
-## BTC Alignment Check (All Modes)
-
-**For altcoins: check BTC trend before entry.**
-
-```javascript
-async function check_btc_alignment(coin, direction) {
-  // Skip for BTC itself
-  if (coin === 'BTC') return { aligned: true, btc_trend: 'N/A' }
-
-  // Get BTC trend (simple: 4h price change)
-  const btc_prices = await hyperliquid_get_candles({ coin: 'BTC', interval: '4h', limit: 2 })
-  const btc_change = (btc_prices[1].close - btc_prices[0].close) / btc_prices[0].close * 100
-
-  let btc_trend = 'NEUTRAL'
-  if (btc_change > 1) btc_trend = 'UP'
-  if (btc_change < -1) btc_trend = 'DOWN'
-
-  // Check alignment
-  const aligned = (
-    (direction === 'LONG' && btc_trend !== 'DOWN') ||
-    (direction === 'SHORT' && btc_trend !== 'UP')
-  )
-
-  const result = {
-    aligned: aligned,
-    btc_trend: btc_trend,
-    btc_change: btc_change,
-    confidence_penalty: aligned ? 0 : -2
-  }
-
-  if (!aligned) {
-    await telegram_send_message({
-      chat_id: TELEGRAM_CHAT_ID,
-      text: `⚠️ *BTC misalignment*
-BTC trend: ${btc_trend} (${btc_change > 0 ? '+' : ''}${btc_change.toFixed(1)}%)
-Trade: ${direction} ${coin}
-Confidence -2 applied`
-    })
-  }
-
-  return result
-}
-```
-
-## Telegram Notifications
-
-**MUST send to Telegram** after every trade action using:
-- chat_id: `TELEGRAM_CHAT_ID` (provided by user at start)
-- parse_mode: `Markdown`
-
-### Message Templates
-
-**Session Start:**
-```
-🚀 *{MODE} Mode Started*
-Balance: ${BALANCE}
-Target: ${TARGET} (+{PCT}%)
-Scan: every {SCAN_INTERVAL}
-```
-
-**Entry:**
-```
-🟢 *{DIRECTION} {COIN}* @ ${ENTRY}
-Leverage: {LEV}x | Size: ${SIZE}
-TP: ${TP} | SL: ${SL}
-
-📝 {REASON}
-
-Next: {SCAN_INTERVAL}
-```
-
-**Exit - Win:**
-```
-✅ *{COIN} +${PNL}* (+{PCT}%)
-Entry: ${ENTRY} → Exit: ${EXIT}
-Balance: ${BALANCE} ({PROGRESS}% to target)
-
-Next: {SCAN_INTERVAL}
-```
-
-**Exit - Loss:**
-```
-❌ *{COIN} -${PNL}* ({PCT}%)
-Entry: ${ENTRY} → Exit: ${EXIT}
-Balance: ${BALANCE}
-
-Next: {SCAN_INTERVAL}
-```
-
-**Scan - No Trade:**
-```
-🔍 Scan complete - no setup found
-Reason: {WHY_NO_TRADE}
-Positions: {POS}/{MAX}
-Balance: ${BALANCE}
-
-Next: {SCAN_INTERVAL}
-```
-
-**Position Alert:**
-```
-📊 *{COIN}* {PNL_PCT}%
-Current: ${PRICE} | Entry: ${ENTRY}
-{ACTION_TAKEN}
-```
-
-**Stop Moved (Profit Locked):**
-```
-🔒 *{COIN}* Stop adjusted
-P&L: +{PNL_PCT}%
-New SL: ${NEW_SL} ({LOCKED_PCT}% locked)
-```
-
-**Breakeven Reached:**
-```
-🛡️ *{COIN}* Breakeven secured
-Position now risk-free
-Current P&L: +{PNL_PCT}%
-```
-
-**Re-entry After Stop:**
-```
-🔄 *{COIN}* Re-entry
-Exited at: ${EXIT} (+{LOCKED}%)
-Price continued: ${CURRENT}
-Re-entering {DIRECTION}...
-```
-
-**Drawdown Warning:**
-```
-⚠️ *Drawdown Alert* -{DRAWDOWN_PCT}%
-Peak: ${PEAK} → Current: ${CURRENT}
-Action: {REDUCED_SIZE / PAUSED / HALTED}
-```
-
-**Partial Profit Take:**
-```
-💰 *{COIN}* Partial take #{N}
-Closed {PCT}% at +{PNL_PCT}%
-Remaining: {REMAINING}% riding to TP
-```
-
-**Liquidity/Spread Skip:**
-```
-⚠️ *{COIN}* {REASON}
-{DETAILS}
-Skipping trade.
-```
-
-**Performance Update:**
-```
-📊 *Performance Update* ({N} trades)
-Win rate: {WIN_RATE}%
-Total P&L: {TOTAL_PNL}%
-Avg trade: {AVG}%
-Best: +{BEST}% | Worst: {WORST}%
-Streak: {STREAK}
-```
-
-**BTC Misalignment:**
-```
-⚠️ *BTC misalignment*
-BTC trend: {TREND} ({CHANGE}%)
-Trade: {DIRECTION} {COIN}
-Confidence -2 applied
-```
-
-**Time Condition:**
-```
-⏰ {WARNING}
-Size multiplier: ×{MULT}
-```
-
-**Target Reached:**
-```
-🎉 *TARGET REACHED!*
-${STARTING} → ${FINAL}
-Return: +{RETURN}%
-Trades: {TOTAL} ({WINS}W/{LOSSES}L)
-Duration: {DURATION}
-```
-
-**Daily Summary (optional):**
-```
-📈 *Daily Report*
-Balance: ${BALANCE} ({DAY_CHANGE}%)
-Open: {POSITIONS} positions
-Today: {TRADES} trades ({WINS}W/{LOSSES}L)
-Progress: {PROGRESS}% to target
-```
-
-**{SCAN_INTERVAL}** values:
-- Degen: `10min`
-- Aggressive: `20min`
-- Balanced: `2hr`
-- Conservative: `3d`
-
-### What to Report
-
-| Event | Report |
-|-------|--------|
-| Session start | Mode, balance, target |
-| New trade | Coin, direction, leverage, TP/SL, **reason** |
-| Trade closed | Result, P&L, new balance |
-| Scan (no trade) | Why skipped (unclear trend, low confidence, etc.) |
-| Position alert | Current P&L, any action taken |
-| Target reached | Full summary with stats |
-| Error/Issue | What happened, what agent will do |
-
-### Reason Examples
-
-Good reasons to include:
-- "BTC breaking $100k resistance, momentum confirmed"
-- "SOL oversold, funding negative, expecting bounce"
-- "ETH weak vs BTC, shorting the ratio play"
-- "DOGE memecoin pump, riding momentum"
-
-Why no trade:
-- "BTC choppy, no clear direction"
-- "All setups below 6 confidence"
-- "Funding extreme, waiting for reset"
-- "Portfolio full (3/3 positions)"
-
-## Session Cleanup
+## Cleanup
 
 ```javascript
 async function cleanup_session(chat_id) {
-  // Get final stats
-  const stats_str = await splox_kv_get({ key: `${chat_id}_stats` })
-  const stats = JSON.parse(stats_str || '{}')
+  const stats = JSON.parse(await splox_kv_get({ key: `${chat_id}_stats` }) || '{}')
+  const session = JSON.parse(await splox_kv_get({ key: `${chat_id}_session` }) || '{}')
 
-  const session_str = await splox_kv_get({ key: `${chat_id}_session` })
-  const session = JSON.parse(session_str || '{}')
-
-  // Close all positions
   const positions = await hyperliquid_get_positions({})
-  for (const pos of positions) {
-    await hyperliquid_market_close({ coin: pos.coin })
-  }
+  for (const p of positions) await hyperliquid_market_close({ coin: p.coin })
 
-  // Cancel webhooks/subscriptions
-  if (session.subscription_id) {
-    await event_unsubscribe({ subscription_id: session.subscription_id })
-  }
+  if (session.subscription_id) await event_unsubscribe({ subscription_id: session.subscription_id })
   await hyperliquid_unsubscribe_webhook({})
 
-  // Get final balance
   const balance = await hyperliquid_get_balance({})
-  const final_balance = balance.accountValue
-  const return_pct = ((final_balance - session.starting_balance) / session.starting_balance * 100)
-  const duration_ms = Date.now() - session.start_time
-  const duration_hours = (duration_ms / 3600000).toFixed(1)
+  const ret = ((balance.accountValue - session.starting_balance) / session.starting_balance * 100)
 
-  // Final report
-  await telegram_send_message({
-    chat_id: TELEGRAM_CHAT_ID,
-    text: `🏁 *Session Ended*
-${session.starting_balance.toFixed(2)} → $${final_balance.toFixed(2)}
-Return: ${return_pct > 0 ? '+' : ''}${return_pct.toFixed(1)}%
-Trades: ${stats.total_trades} (${stats.wins}W/${stats.losses}L)
-Win rate: ${(stats.wins / stats.total_trades * 100).toFixed(0)}%
-Duration: ${duration_hours}h`
+  telegram_send_message({
+    text: `🏁 Session ended
+$${session.starting_balance} → $${balance.accountValue.toFixed(2)} (${ret > 0 ? '+' : ''}${ret.toFixed(1)}%)
+${stats.total_trades} trades | ${stats.wins}W/${stats.losses}L`
   })
-
-  // Clean up KV keys (optional - keep for history)
-  // await splox_kv_delete({ key: `${chat_id}_session` })
-  // etc.
 }
 ```
 
-## Agent Autonomy
+## Telegram Templates
 
-You have freedom to decide:
-- **Allocation**: Concentrate or diversify across positions
-- **Sizing**: Adjust within risk limits based on conviction
-- **Coin selection**: Override if leverage/liquidity unsuitable
-- **Timing**: Enter now or wait for better price
-- **Exit strategy**: Adjust TP/SL based on market conditions
+Session start: `🚀 {MODE} | ${BAL} → ${TARGET} (+{PCT}%) | {INTERVAL}`
 
-Guidelines are guardrails, not handcuffs. Use your research and judgment.
+Entry: `🟢 {DIR} {COIN} @ ${PRICE} | {LEV}x | TP ${TP} SL ${SL}`
 
-**Hard limits (non-negotiable):**
-- Daily loss limit → stop opening new positions
-- 3 consecutive losses → cooldown **4-6 hours**, size -50%
-- 5 losses in one day → **stop for 24 hours**
-- Never risk more than mode's base risk per trade
-- **-20% drawdown from peak → HALT ALL TRADING**
-- **Minimum R:R = 2:1** (TP must be ≥2× SL distance)
+Win: `✅ {COIN} +${PNL} (+{PCT}%) | ${BAL} | {W}W/{L}L`
 
-## Important Notes
+Loss: `❌ {COIN} -${PNL} ({PCT}%) | ${BAL} | {W}W/{L}L`
 
-- Check connection before any action
-- Load mode parameters as guidelines
-- Execute all steps from the mode file in order, none are optional
-- Respect daily drawdown limits
-- Always verify coin's max leverage before researching it deeply
-- **Always initialize KV state at session start**
-- **Always check drawdown circuit breaker on wake-up**
+Stop moved: `🔒 {COIN} +{PNL}% → SL at {LOCKED}%`
+
+Partial: `💰 {COIN} Partial #{N}: 30% at +{PNL}%`
+
+Target: `🎉 TARGET! ${START} → ${FINAL} (+{RET}%) | {W}W/{L}L`
+
+## Hard Limits
+
+- Daily loss limit → stop new positions
+- 3 consecutive losses → cooldown 4-6h, size -50%
+- 5 losses in day → stop 24h
+- -20% drawdown → HALT ALL
+- Min R:R = 2:1 always
